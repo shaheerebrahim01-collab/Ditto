@@ -1,0 +1,286 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ───────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  TAILOR
+  RENTAL_SHOP
+  DESIGNER
+  EMBROIDERY_SPECIALIST
+  ADMIN
+}
+
+enum BusinessStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum OrderStage {
+  ORDER_CONFIRMED
+  FABRIC_SELECTED
+  CUTTING
+  STITCHING
+  EMBROIDERY
+  QUALITY_CHECK
+  PACKED
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum RentalStatus {
+  RESERVED
+  PICKED_UP
+  RETURNED
+  LATE
+  CANCELLED
+}
+
+enum AssistantStatus {
+  IN_TRAINING
+  CERTIFIED
+  SUSPENDED
+}
+
+// ── Identity ────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  phone        String?  @unique
+  role         Role     @default(CUSTOMER)
+  fullName     String
+  avatarUrl    String?
+  authProvider String // apple | google | phone | email
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  measurements   Measurement[]
+  addresses      Address[]
+  orders         CustomOrder[]   @relation("CustomerOrders")
+  reviews        Review[]        @relation("ReviewAuthor")
+  wishlist       WishlistItem[]
+  notifications  Notification[]
+  messages       Message[]
+  tailorProfile  TailorProfile?
+  rentalShop     RentalShopProfile?
+  rentalBookings RentalBooking[] @relation("Renter")
+
+  referralCode String? @unique
+  referredById String?
+  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id])
+  referrals    User[]  @relation("Referrals")
+}
+
+model Measurement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  label     String   @default("Default")
+  chest     Float?
+  waist     Float?
+  hip       Float?
+  shoulder  Float?
+  sleeve    Float?
+  neck      Float?
+  inseam    Float?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  orders CustomOrder[]
+}
+
+model Address {
+  id      String  @id @default(cuid())
+  userId  String
+  user    User    @relation(fields: [userId], references: [id])
+  label   String
+  line1   String
+  line2   String?
+  city    String
+  country String
+  lat     Float?
+  lng     Float?
+}
+
+// ── Business profiles ──────────────────────────────────────────────────
+
+model TailorProfile {
+  id               String         @id @default(cuid())
+  userId           String         @unique
+  user             User           @relation(fields: [userId], references: [id])
+  businessName     String
+  bio              String?
+  specialties      String[]
+  deliveryRadiusKm Float?
+  workingHours     Json?
+  status           BusinessStatus @default(PENDING)
+  ratingAvg        Float          @default(0)
+  ratingCount      Int            @default(0)
+
+  portfolio  PortfolioItem[]
+  orders     CustomOrder[]     @relation("TailorOrders")
+  assistants TailorAssistant[]
+}
+
+// Not an app login/role — tailor assistants complete training, earn a
+// certificate, and register in person at an office. This model exists for
+// roster and certification tracking only.
+model TailorAssistant {
+  id                  String          @id @default(cuid())
+  tailorId            String
+  tailor              TailorProfile   @relation(fields: [tailorId], references: [id])
+  fullName            String
+  certificateNumber   String?         @unique
+  trainingCompletedAt DateTime?
+  status              AssistantStatus @default(IN_TRAINING)
+  registeredAtOffice  String?
+  createdAt           DateTime        @default(now())
+}
+
+model RentalShopProfile {
+  id           String         @id @default(cuid())
+  userId       String         @unique
+  user         User           @relation(fields: [userId], references: [id])
+  businessName String
+  status       BusinessStatus @default(PENDING)
+  ratingAvg    Float          @default(0)
+  ratingCount  Int            @default(0)
+
+  items RentalItem[]
+}
+
+model RentalItem {
+  id            String            @id @default(cuid())
+  shopId        String
+  shop          RentalShopProfile @relation(fields: [shopId], references: [id])
+  name          String
+  category      String
+  pricePerDay   Float
+  depositAmount Float
+  imageUrl      String?
+
+  bookings RentalBooking[]
+}
+
+model RentalBooking {
+  id         String       @id @default(cuid())
+  itemId     String
+  item       RentalItem   @relation(fields: [itemId], references: [id])
+  renterId   String
+  renter     User         @relation("Renter", fields: [renterId], references: [id])
+  pickupDate DateTime
+  returnDate DateTime
+  status     RentalStatus @default(RESERVED)
+  lateFee    Float        @default(0)
+  createdAt  DateTime     @default(now())
+}
+
+model PortfolioItem {
+  id        String        @id @default(cuid())
+  tailorId  String
+  tailor    TailorProfile @relation(fields: [tailorId], references: [id])
+  category  String
+  imageUrl  String
+  createdAt DateTime      @default(now())
+}
+
+// ── Orders, payments, reviews ──────────────────────────────────────────
+
+model CustomOrder {
+  id              String       @id @default(cuid())
+  customerId      String
+  customer        User         @relation("CustomerOrders", fields: [customerId], references: [id])
+  tailorId        String
+  tailor          TailorProfile @relation("TailorOrders", fields: [tailorId], references: [id])
+  garmentType     String
+  fabric          String
+  detailsJson     Json?
+  measurementId   String?
+  measurement     Measurement? @relation(fields: [measurementId], references: [id])
+  price           Float
+  stage           OrderStage   @default(ORDER_CONFIRMED)
+  estDeliveryDate DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  review  Review?
+  payment Payment?
+}
+
+model Payment {
+  id          String      @id @default(cuid())
+  orderId     String      @unique
+  order       CustomOrder @relation(fields: [orderId], references: [id])
+  amount      Float
+  currency    String      @default("USD")
+  provider    String // stripe | apple_pay | google_pay | wallet
+  providerRef String?
+  status      String // pending | succeeded | failed | refunded
+  createdAt   DateTime    @default(now())
+}
+
+model Review {
+  id        String      @id @default(cuid())
+  orderId   String      @unique
+  order     CustomOrder @relation(fields: [orderId], references: [id])
+  authorId  String
+  author    User        @relation("ReviewAuthor", fields: [authorId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime    @default(now())
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  itemType  String // tailor | rental_item | style
+  refId     String
+  createdAt DateTime @default(now())
+}
+
+// ── Comms ───────────────────────────────────────────────────────────────
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  sender         User     @relation(fields: [senderId], references: [id])
+  body           String?
+  attachmentUrl  String?
+  attachmentType String? // image | voice | video
+  createdAt      DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ── Admin ───────────────────────────────────────────────────────────────
+
+model BusinessApplication {
+  id           String         @id @default(cuid())
+  applicantId  String
+  businessType String // tailor | rental_shop | designer | embroidery
+  status       BusinessStatus @default(PENDING)
+  submittedAt  DateTime       @default(now())
+  reviewedAt   DateTime?
+  reviewNotes  String?
+}
