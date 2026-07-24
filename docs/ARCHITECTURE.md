@@ -23,9 +23,14 @@ fits how tightly orders/measurements/payments/reviews reference each other.
 
 ## Mobile
 
-Flutter, built against this API. Not started — the first API surface
-(auth + users) needs to exist before there's anything for a client to call
-against. That's Phase 4.
+Flutter, built against this API. `mobile/customer_app/` (Phase 4, in
+progress) — layered the same way as the backend: `core/` for the API
+client, token storage and the Firebase-to-JWT auth exchange, `features/*`
+for screens, `models/` mirroring the Prisma models it consumes. Platform
+folders (`android/`, `ios/`) and Firebase config are intentionally not
+generated yet — they need a real Flutter SDK and a real Firebase project,
+neither available in the sandbox this was built in. See
+`mobile/customer_app/README.md`.
 
 ## What's deliberately not here yet
 

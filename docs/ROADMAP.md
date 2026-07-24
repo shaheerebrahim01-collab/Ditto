@@ -6,7 +6,7 @@ continues this project should read this file first.
 - [x] Phase 1 — Repository architecture
 - [x] Phase 2 — Database schema
 - [x] Phase 3 — Authentication
-- [ ] Phase 4 — Customer mobile app
+- [ ] Phase 4 — Customer mobile app (in progress — auth + profile screens done; platform folders and Firebase config pending)
 - [ ] Phase 5 — Tailor mobile app
 - [ ] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops
@@ -86,8 +86,40 @@ a Firebase project, enable Apple/Google/Phone/Email sign-in providers, drop
 a service-account key's values into `.env`, and `POST /auth/firebase` is
 live.
 
-## Phase 4 — next up
+## Phase 4 — customer mobile app (in progress)
 
-Customer mobile app. First real Flutter code — talks to `/auth/firebase`
-and `/users/me`, so those needed to exist first (they now do).
+Flutter app in `mobile/customer_app/`. First real Flutter code — talks to
+`/auth/firebase` and `/users/me`, so those needed to exist first (Phase 3).
+
+Hand-written, not scaffolded: `core/api_client.dart` (`loginWithFirebase`,
+`getMe`), `core/auth_repository.dart` (Firebase sign-in for Apple / Google /
+Phone / Email, then exchanges the Firebase ID token for our JWT exactly the
+way `auth.service.ts` expects), `core/token_storage.dart` (secure storage
+for our JWT, never the Firebase token), login + phone-OTP screens, and a
+home screen that renders whatever `GET /users/me` returns — the first
+screen that proves the full chain works.
+
+**Verified:** the Dart request/response shapes were checked directly
+against `auth.controller.ts`, `firebase-login.dto.ts`, `users.controller.ts`,
+and the Prisma `User` model — not assumed. A unit test
+(`test/user_model_test.dart`) checks `DittoUser.fromJson` against the real
+`/users/me` shape.
+
+**Not verified here:** this sandbox has no Flutter SDK, so none of it has
+gone through `flutter pub get` / `analyze` / `test` / a build — same
+category of gap as Prisma's engine binary in Phase 2. Two things still need
+a real Flutter environment and a real Firebase project (same one Phase 3's
+follow-up needs) before this runs at all:
+
+1. `flutter create --org com.ditto.app --project-name customer_app --platforms=android,ios .`
+   in `mobile/customer_app/` — generates `android/` and `ios/` (an
+   iOS Xcode project isn't something to hand-write).
+2. `flutterfire configure` against that Firebase project, then wire the
+   generated `firebase_options.dart` into `main.dart`.
+
+Full detail in `mobile/customer_app/README.md`.
+
+Not yet built in Phase 4: anything past auth + profile (browsing
+tailors/rental shops, placing orders, tracking rentals) — those land as
+their own endpoints exist in later phases.
 
