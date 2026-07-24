@@ -1,0 +1,55 @@
+import '../models/tailor_summary.dart';
+
+// Shared placeholder data for Home and Explore until GET /tailors exists.
+const mockTailors = [
+  TailorSummary(
+    id: 't1',
+    businessName: 'Al-Karam Tailors',
+    specialties: ['Suits', 'Sherwanis'],
+    ratingAvg: 4.8,
+    ratingCount: 132,
+    distanceKm: 2.3,
+    priceTier: PriceTier.mid,
+    fastDelivery: true,
+  ),
+  TailorSummary(
+    id: 't2',
+    businessName: 'Rehman Stitching House',
+    specialties: ['Alterations', 'Casual Wear'],
+    ratingAvg: 4.6,
+    ratingCount: 87,
+    distanceKm: 1.1,
+    priceTier: PriceTier.budget,
+    fastDelivery: true,
+  ),
+  TailorSummary(
+    id: 't3',
+    businessName: 'Zaman Bespoke',
+    specialties: ['Suits'],
+    ratingAvg: 4.9,
+    ratingCount: 204,
+    distanceKm: 6.8,
+    priceTier: PriceTier.luxury,
+    fastDelivery: false,
+  ),
+  TailorSummary(
+    id: 't4',
+    businessName: 'Heritage Sherwani Co.',
+    specialties: ['Sherwanis', 'Rentals'],
+    ratingAvg: 4.7,
+    ratingCount: 156,
+    distanceKm: 4.2,
+    priceTier: PriceTier.luxury,
+    fastDelivery: false,
+  ),
+  TailorSummary(
+    id: 't5',
+    businessName: 'Modern Cuts',
+    specialties: ['Casual Wear', 'Alterations'],
+    ratingAvg: 4.5,
+    ratingCount: 61,
+    distanceKm: 0.8,
+    priceTier: PriceTier.budget,
+    fastDelivery: true,
+  ),
+];
