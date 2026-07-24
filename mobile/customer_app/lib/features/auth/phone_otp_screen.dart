@@ -54,7 +54,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthRepository>();
 
-    // AuthGate (main.dart) swaps to HomeScreen once status flips to
+    // AuthGate (main.dart) swaps to MainShell once status flips to
     // authenticated, but that happens underneath this pushed route — pop
     // back to it so the user actually sees it.
     if (auth.status == AuthStatus.authenticated) {
