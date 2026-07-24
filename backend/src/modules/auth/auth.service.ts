@@ -1,10 +1,12 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { getFirebaseAdmin } from './firebase-admin.provider';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -19,7 +21,8 @@ export class AuthService {
     let decoded;
     try {
       decoded = await getFirebaseAdmin().auth().verifyIdToken(idToken);
-    } catch {
+    } catch (err) {
+      this.logger.error('Firebase token verification failed', err instanceof Error ? err.stack : err);
       throw new UnauthorizedException('Invalid or expired Firebase token');
     }
 
