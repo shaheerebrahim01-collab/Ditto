@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
+import '../../core/widgets/tag.dart';
 import '../../data/mock_tailors.dart';
 import '../../models/tailor_summary.dart';
+import '../tailor_profile/tailor_profile_screen.dart';
 
 enum _Filter { nearby, highestRated, fastDelivery, luxury, budget }
 
@@ -124,89 +126,74 @@ class _TailorListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: DittoColors.brown.withValues(alpha: 0.12)),
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => TailorProfileScreen(tailorId: tailor.id)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 84,
-            width: 84,
-            decoration: BoxDecoration(
-              color: DittoColors.brown.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: DittoColors.brown.withValues(alpha: 0.12)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 84,
+              width: 84,
+              decoration: BoxDecoration(
+                color: DittoColors.brown.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.storefront_outlined, size: 32, color: DittoColors.brown.withValues(alpha: 0.5)),
             ),
-            child: Icon(Icons.storefront_outlined, size: 32, color: DittoColors.brown.withValues(alpha: 0.5)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tailor.businessName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: DittoColors.ink),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: tailor.specialties
-                      .map((s) => _Tag(label: s))
-                      .toList(),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.star, size: 15, color: DittoColors.gold),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${tailor.ratingAvg} (${tailor.ratingCount})',
-                      style: const TextStyle(color: DittoColors.mutedInk, fontSize: 13),
-                    ),
-                    const SizedBox(width: 10),
-                    const Icon(Icons.place_outlined, size: 15, color: DittoColors.mutedInk),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${tailor.distanceKm} km',
-                      style: const TextStyle(color: DittoColors.mutedInk, fontSize: 13),
-                    ),
-                    if (tailor.fastDelivery) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tailor.businessName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, color: DittoColors.ink),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: tailor.specialties.map((s) => Tag(label: s)).toList(),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.star, size: 15, color: DittoColors.gold),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${tailor.ratingAvg} (${tailor.ratingCount})',
+                        style: const TextStyle(color: DittoColors.mutedInk, fontSize: 13),
+                      ),
                       const SizedBox(width: 10),
-                      const Icon(Icons.bolt, size: 15, color: DittoColors.brown),
+                      const Icon(Icons.place_outlined, size: 15, color: DittoColors.mutedInk),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${tailor.distanceKm} km',
+                        style: const TextStyle(color: DittoColors.mutedInk, fontSize: 13),
+                      ),
+                      if (tailor.fastDelivery) ...[
+                        const SizedBox(width: 10),
+                        const Icon(Icons.bolt, size: 15, color: DittoColors.brown),
+                      ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: DittoColors.gold.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(label, style: const TextStyle(fontSize: 11, color: DittoColors.ink)),
     );
   }
 }

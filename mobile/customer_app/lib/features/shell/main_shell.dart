@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/shell_navigation.dart';
 import '../create/create_screen.dart';
 import '../explore/explore_screen.dart';
 import '../home/home_screen.dart';
@@ -7,15 +9,8 @@ import '../orders/orders_screen.dart';
 import '../profile/profile_screen.dart';
 
 // Bottom-nav shell shown once authenticated: Home / Explore / Create / Orders / Profile.
-class MainShell extends StatefulWidget {
+class MainShell extends StatelessWidget {
   const MainShell({super.key});
-
-  @override
-  State<MainShell> createState() => _MainShellState();
-}
-
-class _MainShellState extends State<MainShell> {
-  int _index = 0;
 
   static const _screens = [
     HomeScreen(),
@@ -27,11 +22,13 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final nav = context.watch<ShellNavigation>();
+
     return Scaffold(
-      body: IndexedStack(index: _index, children: _screens),
+      body: IndexedStack(index: nav.index, children: _screens),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (index) => setState(() => _index = index),
+        selectedIndex: nav.index,
+        onDestinationSelected: nav.goTo,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(

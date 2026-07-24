@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../models/tailor_summary.dart';
+import '../tailor_profile/tailor_profile_screen.dart';
 import 'home_mock_data.dart';
 
 // Browse feed: header, search, category chips, hero banner, top tailors.
@@ -204,39 +205,44 @@ class _TailorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 160,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 110,
-            width: 160,
-            decoration: BoxDecoration(
-              color: DittoColors.brown.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(Icons.storefront_outlined, size: 36, color: DittoColors.brown.withValues(alpha: 0.5)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            tailor.businessName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: DittoColors.ink),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              const Icon(Icons.star, size: 16, color: DittoColors.gold),
-              const SizedBox(width: 4),
-              Text(
-                '${tailor.ratingAvg} (${tailor.ratingCount})',
-                style: const TextStyle(color: DittoColors.mutedInk),
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => TailorProfileScreen(tailorId: tailor.id)),
+      ),
+      child: SizedBox(
+        width: 160,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 110,
+              width: 160,
+              decoration: BoxDecoration(
+                color: DittoColors.brown.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
               ),
-            ],
-          ),
-        ],
+              child: Icon(Icons.storefront_outlined, size: 36, color: DittoColors.brown.withValues(alpha: 0.5)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              tailor.businessName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: DittoColors.ink),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(Icons.star, size: 16, color: DittoColors.gold),
+                const SizedBox(width: 4),
+                Text(
+                  '${tailor.ratingAvg} (${tailor.ratingCount})',
+                  style: const TextStyle(color: DittoColors.mutedInk),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

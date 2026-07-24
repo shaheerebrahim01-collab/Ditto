@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth_repository.dart';
+import 'core/shell_navigation.dart';
 import 'core/theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shell/main_shell.dart';
@@ -19,8 +20,11 @@ class DittoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthRepository()..restoreSession(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthRepository()..restoreSession()),
+        ChangeNotifierProvider(create: (_) => ShellNavigation()),
+      ],
       child: MaterialApp(
         title: 'Ditto',
         theme: DittoTheme.light,
