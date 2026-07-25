@@ -24,6 +24,12 @@ in-person Tailor Assistant Partner Program instead (training, certificate,
 registered at an office). `TailorAssistant` is in the schema for roster and
 certification tracking, not as an app-facing account type.
 
+## Deferred
+
+- More garment/fabric/detail options in the Create flow (currently 8
+  garment types, 8 fabric swatches, 3 lapel/button styles) — later, not now.
+- A full design pass across the customer app — later, not now.
+
 ## Phase 1 — repository architecture
 
 NestJS backend skeleton in `backend/`: one module per domain
