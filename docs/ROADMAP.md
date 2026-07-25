@@ -8,7 +8,7 @@ continues this project should read this file first.
 - [x] Phase 3 — Authentication
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
-- [ ] Phase 6 — Admin dashboard (in progress — backend API done: stats, business application approve/reject, user/tailor listing, RBAC; no admin frontend yet)
+- [ ] Phase 6 — Admin dashboard (in progress — backend API, RBAC, and admin-provisioning script done; no admin frontend yet)
 - [ ] Phase 7 — Suit rental ops
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
@@ -200,7 +200,11 @@ alongside `JwtAuthGuard`, same pattern as every other guarded controller —
 is already global in `main.ts`, so `ReviewApplicationDto` validation is
 live with no extra wiring. `npx tsc --noEmit` — zero errors.
 
-**Not built yet:** the admin frontend itself (web dashboard), plus any
-auth path for provisioning the first `Role.ADMIN` user (there's no
-signup flow for it — it'll need a seed script or manual DB update).
+There's no signup flow for `Role.ADMIN` — `backend/prisma/promote-admin.js`
+closes that gap by promoting an already-existing user (by email) to admin:
+`npm run seed:admin -- someone@example.com`. Verified against the real
+local dev database, including the not-found and already-admin paths.
+
+**Not built yet:** the admin frontend itself (web dashboard) — everything
+else for Phase 6 is done.
 
