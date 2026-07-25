@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { AdminController } from './admin.controller';
+import { AdminService } from './admin.service';
 
-// AdminModule owns everything under /admin. Empty by design at this phase —
-// see docs/ROADMAP.md for when this module's endpoints land.
-@Module({})
+@Module({
+  imports: [AuthModule], // needed so JwtAuthGuard has something to check against
+  controllers: [AdminController],
+  providers: [AdminService],
+})
 export class AdminModule {}
