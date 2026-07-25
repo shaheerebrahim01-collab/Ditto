@@ -23,14 +23,21 @@ fits how tightly orders/measurements/payments/reviews reference each other.
 
 ## Mobile
 
-Flutter, built against this API. `mobile/customer_app/` (Phase 4, in
-progress) — layered the same way as the backend: `core/` for the API
-client, token storage and the Firebase-to-JWT auth exchange, `features/*`
-for screens, `models/` mirroring the Prisma models it consumes. Platform
-folders (`android/`, `ios/`) and Firebase config are intentionally not
-generated yet — they need a real Flutter SDK and a real Firebase project,
-neither available in the sandbox this was built in. See
-`mobile/customer_app/README.md`.
+Flutter, built against this API. Two separate apps, not one app with two
+modes — separate `pubspec.yaml`, `main.dart`, and platform folders each,
+since they're different products for different roles (a customer never
+needs the tailor's order queue, and vice versa):
+
+- `mobile/customer_app/` (Phase 4) — browsing, ordering, profile.
+- `mobile/tailor_app/` (Phase 5, in progress) — dashboard, incoming
+  orders, portfolio.
+
+Both are layered the same way as the backend: `core/` for the API client,
+token storage, and the Firebase-to-JWT auth exchange; `features/*` for
+screens; `models/` mirroring the Prisma models each consumes. That `core/`
+layer is duplicated between the two apps rather than extracted into a
+shared package — with only two apps and no shared UI, a shared package
+would be premature.
 
 ## What's deliberately not here yet
 

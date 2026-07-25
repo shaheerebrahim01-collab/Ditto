@@ -6,8 +6,8 @@ continues this project should read this file first.
 - [x] Phase 1 — Repository architecture
 - [x] Phase 2 — Database schema
 - [x] Phase 3 — Authentication
-- [ ] Phase 4 — Customer mobile app (in progress — auth + profile screens done; platform folders and Firebase config pending)
-- [ ] Phase 5 — Tailor mobile app
+- [x] Phase 4 — Customer mobile app
+- [ ] Phase 5 — Tailor mobile app (in progress — dashboard, orders (accept/decline), and portfolio done; Android Firebase registration pending)
 - [ ] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops
 - [ ] Phase 8 — AI styling & measurements
@@ -125,7 +125,44 @@ follow-up needs) before this runs at all:
 
 Full detail in `mobile/customer_app/README.md`.
 
-Not yet built in Phase 4: anything past auth + profile (browsing
-tailors/rental shops, placing orders, tracking rentals) — those land as
-their own endpoints exist in later phases.
+Fully built out in this repo (later, past the initial auth+profile
+milestone above): Home, Explore, Create, Orders, and Profile — all five
+bottom-nav tabs, running against local mock data ahead of the endpoints
+that don't exist yet (tailor browsing, order placement, rental tracking).
+See per-screen commit history for what each renders against and why.
+
+## Phase 5 — tailor mobile app (in progress)
+
+A separate Flutter app in `mobile/tailor_app/`, not a second entry point in
+`customer_app` — its own `pubspec.yaml`, its own `main.dart`, its own
+Android/web platform folders. Reuses the *pattern* from `customer_app`'s
+`core/` (env, token storage, API client, auth repository, theme) copied in
+rather than shared via a package, since a shared package wasn't asked for
+and would be premature for two apps.
+
+Three tabs: Dashboard (rating, today's/this-week's income, today's orders),
+Orders (incoming requests with Accept/Decline, plus an active-orders list),
+Portfolio (grid of work, "+" picks a real photo via `image_picker` and adds
+it to the grid). All three render against local mock data — no tailor-facing
+endpoints exist yet.
+
+Two things are ahead of what the backend currently models, flagged inline
+in the code:
+- The incoming-request queue (with Accept/Decline) — `CustomOrder` only
+  starts at `OrderStage.ORDER_CONFIRMED`; there's no "pending tailor
+  approval" row yet.
+- Portfolio photo upload — picking a real image works, but there's no
+  storage backend yet (`AWS_S3_BUCKET`/`CLOUDINARY_URL` are Phase 11), so
+  nothing persists past a reload.
+
+Firebase Auth is reused from the same project as `customer_app`
+(`ditto-713d5`) since Auth is project-wide, not per-registered-app — the
+web config was copied in and works as-is. Android has no registered app for
+`com.ditto.app.tailor_app` yet, so `firebase_options.dart` throws for that
+platform until someone runs `flutterfire configure` against it; web is
+the only target that runs right now (same constraint this whole
+conversation has tested `customer_app` under).
+
+**Verified:** `flutter pub get` and `flutter analyze` — clean, 0 issues.
+Ran in Chrome, logged in through the same backend as `customer_app`.
 

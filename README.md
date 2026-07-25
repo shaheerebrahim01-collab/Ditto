@@ -10,7 +10,8 @@ put together.
 ## Stack
 
 - **Backend** — NestJS + TypeScript, PostgreSQL via Prisma, Redis
-- **Mobile** — Flutter, `mobile/customer_app/` (Phase 4, in progress)
+- **Mobile** — Flutter, `mobile/customer_app/` (Phase 4) and
+  `mobile/tailor_app/` (Phase 5, in progress) — separate apps
 - **Auth** — Firebase Auth: Apple / Google / Phone / Email (Phase 3)
 - **Payments** — Stripe, Apple Pay, Google Pay (Phase 10)
 
