@@ -172,8 +172,8 @@ an unrelated JDK/Gradle-wrapper TLS certificate issue on this machine.
 
 ## Phase 6 — admin dashboard (in progress)
 
-Backend API only so far, in `backend/src/modules/admin/`: no admin
-frontend exists yet.
+Backend API in `backend/src/modules/admin/`, plus a frontend now started
+in `admin/` (React + Vite + TypeScript) — not finished, see below.
 
 Adds role-based access control — `@Roles(Role.ADMIN)` decorator
 (`modules/auth/decorators/roles.decorator.ts`) plus a `RolesGuard`
@@ -186,13 +186,17 @@ alongside `JwtAuthGuard`, same pattern as every other guarded controller —
 `AdminController`/`AdminService`, everything behind
 `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(Role.ADMIN)`:
 - `GET /admin/stats` — user count, tailor count, pending business
-  applications, total revenue (summed from succeeded `Payment` rows)
+  applications, total revenue (summed from succeeded `Payment` rows),
+  orders placed since the start of the current month
 - `GET /admin/business-applications` (optional `?status=`), plus
   `POST /admin/business-applications/:id/approve` and `/reject` — the
   applicant's name/email/phone is joined in application code, not via a
   Prisma `include`, since `BusinessApplication.applicantId` has no
   relation to `User` in the schema
-- `GET /admin/users` (optional `?role=`) and `GET /admin/tailors`
+- `GET /admin/users` (optional `?role=`) and `GET /admin/tailors` — the
+  latter includes a `completedOrders` count per tailor (orders at
+  `OrderStage.DELIVERED`), added specifically so the admin frontend's
+  Tailors table wouldn't have to fabricate that number
 
 **Verified:** checked the service's Prisma calls directly against
 `schema.prisma` (`BusinessApplication`, `Payment`, `TailorProfile`, `User`,
@@ -205,6 +209,45 @@ closes that gap by promoting an already-existing user (by email) to admin:
 `npm run seed:admin -- someone@example.com`. Verified against the real
 local dev database, including the not-found and already-admin paths.
 
-**Not built yet:** the admin frontend itself (web dashboard) — everything
-else for Phase 6 is done.
+Frontend in `admin/` — React + Vite + TypeScript, design tokens and
+layout ported from `docs/admin-prototype.html` (same Fraunces/Plus
+Jakarta Sans type, cream/gold/copper palette, light+dark theme).
+Firebase Auth (email/password, same "ditto-713d5" project as the mobile
+apps) → `POST /auth/firebase` → our JWT, stored in `localStorage`;
+`RequireAdmin` redirects to `/login` if signed out or refuses sign-in
+for non-`Role.ADMIN` accounts. Four routes, all wired to the real
+endpoints above, no sample data:
+- **Overview** — the four stat-card numbers, plus a 2-item preview of
+  pending applications
+- **Applications** — full pending queue, Approve/Decline call the real
+  endpoints, card animates out on success and the sidebar badge updates
+  via a shared `StatsProvider`
+- **Users** / **Tailors** — tables with client-side search
+
+Two spots where the prototype's sample data didn't map onto the real
+schema, handled by adaptation rather than invention:
+`BusinessApplication` has no business-name field, so the application
+card's headline is the applicant's name instead; the prototype's
+"+2 this week" stat-trend badges were dropped since there's no
+historical-comparison endpoint to back them honestly.
+
+**Verified:** `npm run build` (`tsc -b && vite build`) and `npm run
+lint` (oxlint) both clean. Ran both dev servers for real — backend
+(`npm run start:dev`) against the local Postgres DB, frontend
+(`npm run dev`) — and drove it with a headless Chromium
+(Playwright, installed temporarily for this check and removed
+afterward): login screen renders correctly; a real JWT signed with the
+dev `JWT_SECRET` was used to sign in as the already-promoted admin
+account and exercise all four views against the live backend; inserted
+a temporary `BusinessApplication` row, confirmed the application card
+renders and its Approve button really calls `POST
+.../approve` (row's `status`/`reviewedAt` updated in Postgres,
+confirmed directly), then deleted the test row. Zero browser console
+errors throughout.
+
+**Not built yet:** full Firebase login end-to-end (no password on hand
+for the real account, worked around as above for this check — someone
+with the actual credentials should confirm the login form itself);
+create/suspend actions for users or tailors (only listing exists);
+pagination (fine while data volume is this low, will matter later).
 

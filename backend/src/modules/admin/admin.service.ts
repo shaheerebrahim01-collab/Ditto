@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BusinessStatus, Role } from '@prisma/client';
+import { BusinessStatus, OrderStage, Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -7,21 +7,28 @@ export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getStats() {
-    const [userCount, tailorCount, pendingApprovals, revenueAgg] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.tailorProfile.count(),
-      this.prisma.businessApplication.count({ where: { status: BusinessStatus.PENDING } }),
-      this.prisma.payment.aggregate({
-        where: { status: 'succeeded' },
-        _sum: { amount: true },
-      }),
-    ]);
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [userCount, tailorCount, pendingApprovals, revenueAgg, ordersThisMonth] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.tailorProfile.count(),
+        this.prisma.businessApplication.count({ where: { status: BusinessStatus.PENDING } }),
+        this.prisma.payment.aggregate({
+          where: { status: 'succeeded' },
+          _sum: { amount: true },
+        }),
+        this.prisma.customOrder.count({ where: { createdAt: { gte: startOfMonth } } }),
+      ]);
 
     return {
       userCount,
       tailorCount,
       pendingApprovals,
       totalRevenue: revenueAgg._sum.amount ?? 0,
+      ordersThisMonth,
     };
   }
 
@@ -75,9 +82,19 @@ export class AdminService {
   }
 
   async listTailors() {
-    return this.prisma.tailorProfile.findMany({
-      include: { user: { select: { fullName: true, email: true, phone: true } } },
+    const tailors = await this.prisma.tailorProfile.findMany({
+      include: {
+        user: { select: { fullName: true, email: true, phone: true } },
+        // Only the count is needed here, not the orders themselves —
+        // selecting just `id` keeps the query from pulling full rows.
+        orders: { where: { stage: OrderStage.DELIVERED }, select: { id: true } },
+      },
       orderBy: { businessName: 'asc' },
     });
+
+    return tailors.map(({ orders, ...tailor }) => ({
+      ...tailor,
+      completedOrders: orders.length,
+    }));
   }
 }
