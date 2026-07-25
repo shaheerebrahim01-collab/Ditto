@@ -7,8 +7,8 @@ continues this project should read this file first.
 - [x] Phase 2 — Database schema
 - [x] Phase 3 — Authentication
 - [x] Phase 4 — Customer mobile app
-- [ ] Phase 5 — Tailor mobile app (in progress — dashboard, orders (accept/decline), and portfolio done; Android Firebase registration pending)
-- [ ] Phase 6 — Admin dashboard
+- [x] Phase 5 — Tailor mobile app
+- [ ] Phase 6 — Admin dashboard (in progress — backend API done: stats, business application approve/reject, user/tailor listing, RBAC; no admin frontend yet)
 - [ ] Phase 7 — Suit rental ops
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
@@ -131,7 +131,7 @@ bottom-nav tabs, running against local mock data ahead of the endpoints
 that don't exist yet (tailor browsing, order placement, rental tracking).
 See per-screen commit history for what each renders against and why.
 
-## Phase 5 — tailor mobile app (in progress)
+## Phase 5 — tailor mobile app
 
 A separate Flutter app in `mobile/tailor_app/`, not a second entry point in
 `customer_app` — its own `pubspec.yaml`, its own `main.dart`, its own
@@ -157,12 +157,50 @@ in the code:
 
 Firebase Auth is reused from the same project as `customer_app`
 (`ditto-713d5`) since Auth is project-wide, not per-registered-app — the
-web config was copied in and works as-is. Android has no registered app for
-`com.ditto.app.tailor_app` yet, so `firebase_options.dart` throws for that
-platform until someone runs `flutterfire configure` against it; web is
-the only target that runs right now (same constraint this whole
-conversation has tested `customer_app` under).
+web config was copied in and works as-is. `flutterfire configure` has since
+been run against that project for `com.ditto.app.tailor_app`, registering
+the Android app (`google-services.json`, Google Services Gradle plugin, and
+a real `android` case in `firebase_options.dart`) — Android was the last
+blocker and is now unblocked.
 
 **Verified:** `flutter pub get` and `flutter analyze` — clean, 0 issues.
-Ran in Chrome, logged in through the same backend as `customer_app`.
+Ran in Chrome, logged in through the same backend as `customer_app`. Android
+Firebase config verified statically (registered app ID matches across
+`firebase_options.dart`, `google-services.json`, and `firebase.json`) —
+an actual `flutter build apk` couldn't be run in this environment due to
+an unrelated JDK/Gradle-wrapper TLS certificate issue on this machine.
+
+## Phase 6 — admin dashboard (in progress)
+
+Backend API only so far, in `backend/src/modules/admin/`: no admin
+frontend exists yet.
+
+Adds role-based access control — `@Roles(Role.ADMIN)` decorator
+(`modules/auth/decorators/roles.decorator.ts`) plus a `RolesGuard`
+(`modules/auth/guards/roles.guard.ts`) that reads that metadata off the
+handler/class and checks it against `request.user.role`. Meant to sit
+alongside `JwtAuthGuard`, same pattern as every other guarded controller —
+`RolesGuard` trusts that `JwtAuthGuard` already ran and populated
+`request.user`.
+
+`AdminController`/`AdminService`, everything behind
+`@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(Role.ADMIN)`:
+- `GET /admin/stats` — user count, tailor count, pending business
+  applications, total revenue (summed from succeeded `Payment` rows)
+- `GET /admin/business-applications` (optional `?status=`), plus
+  `POST /admin/business-applications/:id/approve` and `/reject` — the
+  applicant's name/email/phone is joined in application code, not via a
+  Prisma `include`, since `BusinessApplication.applicantId` has no
+  relation to `User` in the schema
+- `GET /admin/users` (optional `?role=`) and `GET /admin/tailors`
+
+**Verified:** checked the service's Prisma calls directly against
+`schema.prisma` (`BusinessApplication`, `Payment`, `TailorProfile`, `User`,
+`Role`, `BusinessStatus`) — every field and enum matches. `ValidationPipe`
+is already global in `main.ts`, so `ReviewApplicationDto` validation is
+live with no extra wiring. `npx tsc --noEmit` — zero errors.
+
+**Not built yet:** the admin frontend itself (web dashboard), plus any
+auth path for provisioning the first `Role.ADMIN` user (there's no
+signup flow for it — it'll need a seed script or manual DB update).
 
