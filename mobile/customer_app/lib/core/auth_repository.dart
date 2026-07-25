@@ -29,6 +29,7 @@ class AuthRepository extends ChangeNotifier {
   bool isLoading = false;
 
   String? _accessToken;
+  String? get accessToken => _accessToken;
 
   // Call once at app start. If a token is already stored, validate it
   // against GET /users/me rather than trusting it blindly.

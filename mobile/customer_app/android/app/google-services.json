@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "209876187617",
+    "project_id": "ditto-713d5",
+    "storage_bucket": "ditto-713d5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:209876187617:android:077dad42abf6772c95faa0",
+        "android_client_info": {
+          "package_name": "com.ditto.app.customer_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "209876187617-tnfdd38ut5uso6e44ekpt8t97kokpo87.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8f_ygdUd5XkpomiMP7NhfvriIMMBHpfE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "209876187617-tnfdd38ut5uso6e44ekpt8t97kokpo87.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
