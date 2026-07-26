@@ -245,9 +245,49 @@ renders and its Approve button really calls `POST
 confirmed directly), then deleted the test row. Zero browser console
 errors throughout.
 
-**Not built yet:** full Firebase login end-to-end (no password on hand
-for the real account, worked around as above for this check — someone
-with the actual credentials should confirm the login form itself);
-create/suspend actions for users or tailors (only listing exists);
-pagination (fine while data volume is this low, will matter later).
+**Firebase login confirmed end-to-end with a real account.** First
+attempt failed with "Invalid or expired Firebase token" — turned out to
+be the same TLS-interception issue that's dogged this machine all
+along (see Phase 5's Gradle note), this time hit by `firebase-admin`'s
+token verifier fetching Google's public certs. Fixed the same way:
+`NODE_OPTIONS=--use-system-ca` when starting the backend. Confirmed
+`FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY`
+were never the problem — all three were correctly set the whole time.
+
+**Suspend/reactivate for Users and Tailors** — the "only listing
+exists" gap is closed:
+- Schema: `User.suspended` (`Boolean @default(false)`,
+  migration `20260725200953_add_user_suspended`). `TailorProfile`
+  already had `BusinessStatus.SUSPENDED` in its enum, so tailors just
+  needed the transition wired up (`APPROVED` ↔ `SUSPENDED` only —
+  `PENDING`/`REJECTED` still go through the existing approve/reject
+  path).
+- `JwtStrategy` now checks `suspended` against the database on every
+  request (the JWT's `role` claim is still trusted as-is, unchanged
+  from before) — confirmed a suspended user's *existing, still-valid*
+  token starts getting rejected immediately, not just on next login.
+- New endpoints, same guard pattern as the rest of `/admin/*`:
+  `POST /admin/users/:id/suspend`, `/reactivate`,
+  `POST /admin/tailors/:id/suspend`, `/reactivate`. Both sides throw
+  `BadRequestException` on a no-op transition (already suspended,
+  already active, or a tailor not currently `APPROVED`/`SUSPENDED`).
+- Frontend: Suspend/Reactivate buttons in both tables, with a status
+  badge. The Users table hides the button on the signed-in admin's own
+  row — suspending yourself would 401 you out immediately per the
+  `JwtStrategy` check above, so it's not offered.
+- **Bug caught by testing, fixed before commit:** the tailor
+  suspend/reactivate endpoints originally returned the bare
+  `tailorProfile.update()` result, missing the `user` relation and
+  `completedOrders` that `listTailors()` includes — the frontend
+  crashed (`Cannot read properties of undefined (reading 'fullName')`)
+  when it tried to merge that response into the table. Fixed by
+  extracting a shared `tailorInclude`/`shapeTailor` helper so both
+  endpoints return the same shape; re-verified via the same
+  Playwright/real-backend approach (suspend → reactivate round trip
+  against a temporary tailor, zero console errors, temp rows deleted
+  after).
+
+**Not built yet:** create actions for users or tailors (only listing +
+suspend/reactivate exist); pagination (fine while data volume is this
+low, will matter later).
 

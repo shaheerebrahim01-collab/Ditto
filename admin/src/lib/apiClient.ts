@@ -80,5 +80,17 @@ export const adminApi = {
   listUsers: (token: string, role?: Role) =>
     request<DittoUser[]>(`/admin/users${role ? `?role=${role}` : ''}`, token),
 
+  suspendUser: (token: string, id: string) =>
+    request<DittoUser>(`/admin/users/${id}/suspend`, token, { method: 'POST' }),
+
+  reactivateUser: (token: string, id: string) =>
+    request<DittoUser>(`/admin/users/${id}/reactivate`, token, { method: 'POST' }),
+
   listTailors: (token: string) => request<TailorProfile[]>('/admin/tailors', token),
+
+  suspendTailor: (token: string, id: string) =>
+    request<TailorProfile>(`/admin/tailors/${id}/suspend`, token, { method: 'POST' }),
+
+  reactivateTailor: (token: string, id: string) =>
+    request<TailorProfile>(`/admin/tailors/${id}/reactivate`, token, { method: 'POST' }),
 };

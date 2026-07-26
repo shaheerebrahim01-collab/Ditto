@@ -9,6 +9,7 @@ export function Tailors() {
   const [tailors, setTailors] = useState<TailorProfile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!accessToken) return;
@@ -30,6 +31,27 @@ export function Tailors() {
         t.businessName.toLowerCase().includes(q) || t.user.fullName.toLowerCase().includes(q),
     );
   }, [tailors, search]);
+
+  async function toggleSuspended(t: TailorProfile) {
+    if (!accessToken) return;
+    setPendingIds((prev) => new Set(prev).add(t.id));
+    try {
+      const updated =
+        t.status === 'SUSPENDED'
+          ? await adminApi.reactivateTailor(accessToken, t.id)
+          : await adminApi.suspendTailor(accessToken, t.id);
+      setTailors((prev) => prev?.map((existing) => (existing.id === t.id ? updated : existing)) ?? prev);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return logout();
+      setError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(t.id);
+        return next;
+      });
+    }
+  }
 
   return (
     <section className="view">
@@ -60,6 +82,8 @@ export function Tailors() {
               <th>Specialty</th>
               <th>Orders completed</th>
               <th>Rating</th>
+              <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -78,6 +102,23 @@ export function Tailors() {
                     <span className="material-symbols-rounded">star</span>
                     {t.ratingCount > 0 ? t.ratingAvg.toFixed(1) : '—'}
                   </span>
+                </td>
+                <td>
+                  <span className={`status-badge ${t.status === 'SUSPENDED' ? 'suspended' : 'active'}`}>
+                    {t.status.charAt(0) + t.status.slice(1).toLowerCase()}
+                  </span>
+                </td>
+                <td>
+                  {(t.status === 'APPROVED' || t.status === 'SUSPENDED') && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${t.status === 'SUSPENDED' ? 'btn-approve' : 'btn-reject'}`}
+                      disabled={pendingIds.has(t.id)}
+                      onClick={() => toggleSuspended(t)}
+                    >
+                      {t.status === 'SUSPENDED' ? 'Reactivate' : 'Suspend'}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

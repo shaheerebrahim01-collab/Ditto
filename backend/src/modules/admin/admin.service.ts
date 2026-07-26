@@ -81,20 +81,66 @@ export class AdminService {
     });
   }
 
+  async suspendUser(id: string) {
+    return this.setUserSuspended(id, true);
+  }
+
+  async reactivateUser(id: string) {
+    return this.setUserSuspended(id, false);
+  }
+
+  private async setUserSuspended(id: string, suspended: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.suspended === suspended) {
+      throw new BadRequestException(`User is already ${suspended ? 'suspended' : 'active'}`);
+    }
+    return this.prisma.user.update({ where: { id }, data: { suspended } });
+  }
+
+  // Only the order count is needed here, not the orders themselves —
+  // selecting just `id` keeps the query from pulling full rows.
+  private tailorInclude = {
+    user: { select: { fullName: true, email: true, phone: true } },
+    orders: { where: { stage: OrderStage.DELIVERED }, select: { id: true } },
+  } as const;
+
+  private shapeTailor<T extends { orders: { id: string }[] }>(tailor: T) {
+    const { orders, ...rest } = tailor;
+    return { ...rest, completedOrders: orders.length };
+  }
+
   async listTailors() {
     const tailors = await this.prisma.tailorProfile.findMany({
-      include: {
-        user: { select: { fullName: true, email: true, phone: true } },
-        // Only the count is needed here, not the orders themselves —
-        // selecting just `id` keeps the query from pulling full rows.
-        orders: { where: { stage: OrderStage.DELIVERED }, select: { id: true } },
-      },
+      include: this.tailorInclude,
       orderBy: { businessName: 'asc' },
     });
+    return tailors.map((t) => this.shapeTailor(t));
+  }
 
-    return tailors.map(({ orders, ...tailor }) => ({
-      ...tailor,
-      completedOrders: orders.length,
-    }));
+  async suspendTailor(id: string) {
+    return this.setTailorStatus(id, BusinessStatus.APPROVED, BusinessStatus.SUSPENDED);
+  }
+
+  async reactivateTailor(id: string) {
+    return this.setTailorStatus(id, BusinessStatus.SUSPENDED, BusinessStatus.APPROVED);
+  }
+
+  // Only APPROVED <-> SUSPENDED is a valid transition here — PENDING and
+  // REJECTED go through reviewApplication instead.
+  private async setTailorStatus(id: string, from: BusinessStatus, to: BusinessStatus) {
+    const tailor = await this.prisma.tailorProfile.findUnique({ where: { id } });
+    if (!tailor) throw new NotFoundException('Tailor not found');
+    if (tailor.status !== from) {
+      throw new BadRequestException(
+        `Cannot move tailor from ${tailor.status.toLowerCase()} to ${to.toLowerCase()}`,
+      );
+    }
+    const updated = await this.prisma.tailorProfile.update({
+      where: { id },
+      data: { status: to },
+      include: this.tailorInclude,
+    });
+    return this.shapeTailor(updated);
   }
 }

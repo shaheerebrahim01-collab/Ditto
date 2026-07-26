@@ -19,6 +19,7 @@ export interface DittoUser {
   fullName: string;
   avatarUrl: string | null;
   authProvider: string;
+  suspended: boolean;
   createdAt: string;
   updatedAt: string;
 }

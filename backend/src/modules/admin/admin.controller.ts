@@ -39,8 +39,28 @@ export class AdminController {
     return this.adminService.listUsers(role);
   }
 
+  @Post('users/:id/suspend')
+  suspendUser(@Param('id') id: string) {
+    return this.adminService.suspendUser(id);
+  }
+
+  @Post('users/:id/reactivate')
+  reactivateUser(@Param('id') id: string) {
+    return this.adminService.reactivateUser(id);
+  }
+
   @Get('tailors')
   listTailors() {
     return this.adminService.listTailors();
+  }
+
+  @Post('tailors/:id/suspend')
+  suspendTailor(@Param('id') id: string) {
+    return this.adminService.suspendTailor(id);
+  }
+
+  @Post('tailors/:id/reactivate')
+  reactivateTailor(@Param('id') id: string) {
+    return this.adminService.reactivateTailor(id);
   }
 }
