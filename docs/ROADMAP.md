@@ -537,10 +537,42 @@ Shop-owner side — `mobile/tailor_app`:
   the server-computed `overdue` flag and any `lateFee` once returned).
 
 **Verified:** `flutter analyze` clean (no issues) in both `customer_app`
-and `tailor_app` after all of the above. Not run against a live backend
-or emulator in this session — same category of not-yet-verified as the
-rest of this phase's backend work; wire up a Firebase project + running
-`backend` and exercise the flows for real as a follow-up.
+and `tailor_app` after all of the above.
+
+Confirmed end-to-end against the live backend in a later session, on
+both sides — using `flutter run -d chrome` rather than an Android
+emulator, which had hung in a prior attempt on this machine (Chrome has
+been the reliable path since Phase 5).
+
+- **Renter side (`customer_app`):** ran in Chrome, signed in with a real
+  account. Rentals tab loaded a real shop from Postgres; drilled into
+  shop detail and confirmed the empty states ("No reviews yet", "No
+  items listed yet") render correctly. Zero console errors.
+- **Shop-owner side (`tailor_app`):** no seed script existed for a
+  rental-shop *owner* account (Phase 7's earlier backend verification
+  seeded an applicant, not an already-approved owner), so one was
+  created the same way `promote-admin.js` promotes a user — registered
+  a real test account through the app's own email/password sign-up
+  (real Firebase Auth + `POST /auth/firebase`), then promoted it to
+  `Role.RENTAL_SHOP` and created its `RentalShopProfile` directly via
+  Prisma. Signed back in (had to clear the stored JWT first — see gap
+  below) to pick up a fresh token carrying the new role. `AuthGate`
+  correctly routed to `RentalShopShell`. All three tabs verified against
+  the real backend, zero console errors: **Dashboard** showed the real
+  shop profile and correct 0/0 inventory & booking counts; **Inventory**
+  showed the empty state, then a real item ("QA Test Tuxedo", $45/day,
+  $150 deposit) created through the actual "Add item" form (`POST
+  /rental-shops/me/items`); **Bookings** showed the Needs-pickup/Out-for-
+  rental split with correct empty states. Test user, profile, item, and
+  the Firebase account were all deleted afterward; confirmed via `git
+  status` that no stray files were left behind.
+
+**Gap found during that verification:** `tailor_app` has no sign-out
+control anywhere in its UI — `AuthRepository.signOut()` exists but no
+screen calls it (`TailorShell` has no Profile/Settings tab, unlike
+`customer_app`). Not a blocker for this phase, but means there's
+currently no way for a signed-in tailor or rental-shop owner to switch
+accounts or log out without clearing browser storage by hand.
 
 **Not built yet:**
 - No payments integration on bookings — deposits/late fees are computed
@@ -552,4 +584,6 @@ rest of this phase's backend work; wire up a Firebase project + running
   is a plain string field in every DTO, but no screen sets it yet (same
   gap `PortfolioScreen` has for tailors — Phase 11's `AWS_S3_BUCKET`/
   `CLOUDINARY_URL`).
+- No sign-out UI in `tailor_app` (see gap above) — a small follow-up,
+  not scoped to any phase yet.
 
