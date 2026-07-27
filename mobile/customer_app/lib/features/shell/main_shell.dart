@@ -7,8 +7,9 @@ import '../explore/explore_screen.dart';
 import '../home/home_screen.dart';
 import '../orders/orders_screen.dart';
 import '../profile/profile_screen.dart';
+import '../rentals/rentals_screen.dart';
 
-// Bottom-nav shell shown once authenticated: Home / Explore / Create / Orders / Profile.
+// Bottom-nav shell shown once authenticated: Home / Explore / Create / Rentals / Orders / Profile.
 class MainShell extends StatelessWidget {
   const MainShell({super.key});
 
@@ -16,6 +17,7 @@ class MainShell extends StatelessWidget {
     HomeScreen(),
     ExploreScreen(),
     CreateScreen(),
+    RentalsScreen(),
     OrdersScreen(),
     ProfileScreen(),
   ];
@@ -40,6 +42,11 @@ class MainShell extends StatelessWidget {
             icon: Icon(Icons.add_circle_outline),
             selectedIcon: Icon(Icons.add_circle),
             label: 'Create',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.checkroom_outlined),
+            selectedIcon: Icon(Icons.checkroom),
+            label: 'Rentals',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),

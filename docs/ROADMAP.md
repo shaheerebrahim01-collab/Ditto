@@ -9,7 +9,7 @@ continues this project should read this file first.
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
-- [ ] Phase 7 — Suit rental ops (in progress — backend foundation and admin dashboard parity done; no mobile UI yet)
+- [ ] Phase 7 — Suit rental ops (in progress — backend, admin dashboard, and mobile UI done; no payments or ratings yet)
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
@@ -481,12 +481,75 @@ direct-create path wasn't part of this gap), wired into `App.tsx` and
 the `Layout.tsx` sidebar nav. No `CreateTailorModal` equivalent by
 design, not oversight.
 
+**Mobile UI added — extended the two existing apps rather than building a
+third.** `RENTAL_SHOP` is a full app-facing role (unlike `TailorAssistant`,
+see the roles note above) but the backend already treats it as a peer of
+`TAILOR`, and neither `customer_app` nor `tailor_app` did any client-side
+role gating before this — `AuthGate` just switched on auth status, not
+role. So a new `rental_shop_app` would have meant a third Firebase
+project, a third `applicationId`, and a third hand-copy of the
+already-duplicated `api_client.dart`/`theme.dart`/`auth_repository.dart`/
+`token_storage.dart`/`models/user.dart` quintet (customer_app and
+tailor_app still don't share a package — pre-existing duplication, not
+something this phase introduced, but worth a cleanup pass later). Adding
+a role branch to `tailor_app`'s `AuthGate` was the smaller change.
+
+Renter side — `mobile/customer_app`:
+- `lib/models/rental_shop.dart`, `rental_item.dart`, `rental_booking.dart`,
+  `rental_status.dart` — mirror the backend response shapes exactly,
+  including the two fields that only appear conditionally
+  (`RentalShop.itemCount` on the list endpoint vs. `.items` on the detail
+  endpoint; `RentalItem.shopName` only when nested under a booking).
+- `ApiClient` gained `listRentalShops`, `getRentalShop`,
+  `createRentalBooking`, `getMyRentalBookings`, `cancelRentalBooking` —
+  real HTTP calls, no mock data, unlike most of this app's other screens.
+- New `features/rentals/`: `RentalsScreen` (browse, search debounced same
+  as admin's Tailors.tsx), `RentalShopDetailScreen` (shop + its items),
+  `BookItemScreen` (date-range picker, live estimated-total calculation,
+  submits `POST /rentals`), `MyRentalsScreen` (bookings list, cancel button
+  only shown for `RESERVED`, matching the server-side rule in
+  `rentals.service.ts`'s `cancelBooking`).
+- Wired in as a 6th bottom-nav tab (`MainShell`) between Create and
+  Orders — a dedicated tab rather than folding into Explore, since renting
+  is its own vertical, not a tailor-search filter. `TailorProfileScreen`'s
+  hardcoded `_createTabIndex = 2` still points at the right tab; only
+  Orders/Profile shifted by one index and nothing hardcoded those.
+
+Shop-owner side — `mobile/tailor_app`:
+- Same four rental model files, byte-identical to customer_app's copies
+  (matches the existing hand-duplication convention for this app pair).
+- `ApiClient` gained `getMyRentalShop`, `updateMyRentalShop`,
+  `listMyRentalItems`, `createRentalItem`, `updateRentalItem`,
+  `deleteRentalItem`, `listShopBookings`, `markRentalPickedUp`,
+  `markRentalReturned`.
+- `AuthGate` (`main.dart`) now branches on `currentUser.role`:
+  `RENTAL_SHOP` gets a new `RentalShopShell`, everything else still gets
+  `TailorShell` — the first client-side role check either app has ever
+  had.
+- New `features/rental_shop/`: `RentalShopShell` (Dashboard / Bookings /
+  Inventory bottom nav, sibling to `TailorShell`), `RentalShopDashboardScreen`
+  (shop profile, inventory/active-booking counts, in-flight bookings),
+  `RentalShopInventoryScreen` (list + add/edit/delete via a bottom-sheet
+  form; delete surfaces the backend's 409 — "item has bookings" — as a
+  snackbar instead of a raw error), `RentalShopBookingsScreen` (Needs
+  pickup / Out for rental / History split, mirroring
+  `TailorOrdersScreen`'s pending/active layout; "Out for rental" rows show
+  the server-computed `overdue` flag and any `lateFee` once returned).
+
+**Verified:** `flutter analyze` clean (no issues) in both `customer_app`
+and `tailor_app` after all of the above. Not run against a live backend
+or emulator in this session — same category of not-yet-verified as the
+rest of this phase's backend work; wire up a Firebase project + running
+`backend` and exercise the flows for real as a follow-up.
+
 **Not built yet:**
-- No mobile UI (customer-side browsing/booking, or a shop-owner app or
-  in-app screens) — this phase is backend-only so far.
 - No payments integration on bookings — deposits/late fees are computed
   and stored but nothing charges a card; that's Phase 10.
 - No rating-submission path — `ratingAvg`/`ratingCount` exist on
   `RentalShopProfile` but nothing writes to them yet (same situation
   `TailorProfile.ratingAvg` was already in before this phase).
+- No portfolio-style image upload for rental items — `RentalItem.imageUrl`
+  is a plain string field in every DTO, but no screen sets it yet (same
+  gap `PortfolioScreen` has for tailors — Phase 11's `AWS_S3_BUCKET`/
+  `CLOUDINARY_URL`).
 
