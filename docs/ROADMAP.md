@@ -10,7 +10,7 @@ continues this project should read this file first.
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops (in progress — backend, admin dashboard, and mobile UI done; no payments or ratings yet)
-- [ ] Phase 8 — AI styling & measurements
+- [ ] Phase 8 — AI styling & measurements (approach decided, nothing built yet)
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
 - [ ] Phase 11 — Production infrastructure
@@ -586,4 +586,64 @@ accounts or log out without clearing browser storage by hand.
   `CLOUDINARY_URL`).
 - No sign-out UI in `tailor_app` (see gap above) — a small follow-up,
   not scoped to any phase yet.
+
+## Phase 8 — AI styling & measurements (design decided, not started)
+
+Two independent pieces. This entry records the agreed technical
+approach and the reasoning behind it — no schema migrations, endpoints,
+or screens exist yet for either piece.
+
+**Body measurements — "Get your right size today" (in-person visit
+request), not photo/pose estimation.** A photo-based approach (on-device
+pose estimation, or a third-party body-scan API) was considered and
+explicitly set aside for now — deferred to a later cycle if it turns
+out to matter — in favor of something simpler and more reliable: the
+customer requests an in-person measurement visit (location + preferred
+time), fulfilled by a real person with a tape measure.
+
+Checked whether this connects to the existing `TailorAssistant` model
+(`backend/prisma/schema.prisma`) before designing anything new, since
+it already exists for exactly this kind of in-person role. It doesn't
+fit as-is: `TailorAssistant` is roster/certification tracking only
+(`fullName`, `certificateNumber`, `trainingCompletedAt`, `status`,
+`registeredAtOffice`), belongs to a `TailorProfile` (`tailorId`), and —
+per the model's own comment — has no app login of its own. It has no
+scheduling, availability, geographic, or dispatch fields at all, so it
+can't receive or fulfill a visit request directly today.
+
+Proposed shape for a new model (not yet built): a `MeasurementVisitRequest`
+— `customerId`, a location, a preferred time window, and a `status`
+(`PENDING`/`ASSIGNED`/`COMPLETED`/`CANCELLED`) — assigned to a
+**tailor** (`tailorId`, the same pattern `CustomOrder` already uses),
+not directly to a `TailorAssistant`, since assistants have no app
+account to receive it through. The tailor accepts the request in a new
+"Measurement Requests" queue in `tailor_app` (sibling to the existing
+Orders queue) and records which of their own registered assistants (by
+name/certificate, from their existing `TailorAssistant` roster) is
+sent out. Whatever measurements come back from that visit get recorded
+through the manual entry form below, closing the loop into the real
+`Measurement` model.
+
+**Manual measurement entry/edit form — needed regardless of the above.**
+`customer_app`'s "Saved Measurements" screen is currently read-only
+against mock data (`measurements_screen.dart`) — no create/edit UI
+exists, and no backend endpoints exist for the `Measurement` model at
+all. This is a real gap independent of the visit-request feature:
+whoever takes a measurement, whether that's the customer themselves or
+an assistant after a visit, needs somewhere to record it. Scope:
+`GET`/`POST`/`PATCH`/`DELETE /measurements`, self-scoped the same way
+the rest of the API guards per-user data, plus a real form screen
+replacing the mock-data list.
+
+**AI styling — Claude API, constrained to the real garment vocabulary.**
+`POST /styling/recommend`, built against the **Anthropic Claude API**,
+using tool-use/structured output constrained to the exact garment,
+fabric, and lapel/button values already in `garment_builder_options.dart`
+— so a recommendation can only ever be a combination that's actually
+orderable through the existing Create flow, never something invented.
+**Needs `ANTHROPIC_API_KEY`** — not present in this environment,
+required before this piece can be built for real. Same approach this
+project has used at every prior credential point (Firebase in Phases
+3/6): ask for exactly what's needed, exactly when it's needed, rather
+than stub it out.
 
