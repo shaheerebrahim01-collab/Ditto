@@ -9,7 +9,7 @@ continues this project should read this file first.
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
-- [ ] Phase 7 — Suit rental ops (in progress — backend foundation done: profiles, inventory, bookings; no admin/mobile UI yet)
+- [ ] Phase 7 — Suit rental ops (in progress — backend foundation done: profiles, inventory, bookings, application submission; no admin/mobile UI yet)
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
@@ -363,8 +363,8 @@ has no business-name field to draw from (same gap already noted in the
 Phase 6 admin frontend) — until shop-profile editing lets them rename it.
 `designer`/`embroidery` applications get the role bump only; neither has
 a profile model in the schema, so there's nothing else to provision yet.
-Submitting an application at all is still an open gap, unchanged by this
-work.
+Submitting an application at all was still an open gap at this point in
+the phase — closed further down, see "Submission endpoint added" below.
 
 **`RentalShopsModule` (`/rental-shops/*`):**
 - `GET /rental-shops` — public browse, `APPROVED` shops only, optional
@@ -424,9 +424,49 @@ confirmed cancelling twice and cancelling someone else's booking both
 fail correctly (`400` and `404`). All seeded rows deleted afterward,
 confirmed via `git status` that no stray files were left behind.
 
+**Submission endpoint added — the "everything upstream of approve is
+manual" gap above is closed.** New `BusinessApplicationsModule`
+(`backend/src/modules/business-applications/`), one route:
+`POST /business-applications`, covering all four business types (tailor,
+rental_shop, designer, embroidery). Guarded by `JwtAuthGuard` only — any
+authenticated user can apply, deliberately not restricted to
+`Role.ADMIN` like everything under `/admin/*`; `applicantId` is taken
+from the caller's own JWT, not the request body, so nobody can submit an
+application on someone else's behalf. `businessType` is validated
+against the same four values via `@IsIn` (previously just a free-form
+string trusted from admin-inserted rows). Two checks before the row is
+created, both looked up fresh from the database rather than the JWT's
+claims (the JWT's `role` claim goes stale the moment an application gets
+approved, same reason `JwtStrategy` already re-checks `suspended` fresh
+on every request): reject if the applicant already holds that exact role
+(`"You already have a tailor account"`), and reject if they have any
+other application still `PENDING` — one in-flight application at a time,
+regardless of type, rather than tracking per-type pending state
+separately. Deliberately out of scope: no `GET` to check your own
+application's status — the frontend that would consume this doesn't
+exist yet either.
+
+**Verified:** `npx tsc --noEmit` clean. Ran the dev server for real
+against local Postgres: confirmed a logged-out request gets `401`, an
+invalid `businessType` gets `400` with the allowed values listed, a
+valid tailor submission succeeds and a second submission while it's
+still pending is rejected. Approved that real (not seeded) submission
+through the existing `/admin/business-applications/:id/approve`
+endpoint and confirmed in Postgres that the applicant's `User.role`
+flipped to `TAILOR` and a `TailorProfile` was created — the first time
+this fix (from earlier in this phase) has been exercised starting from
+an actual submission instead of a manually inserted row. With a second
+applicant, submitted and approved as `designer`, then confirmed they
+could still submit a fresh `embroidery` application afterward (the
+pending-application block correctly only blocks while one is actually
+pending, not permanently after their first application resolves) — and,
+separately, confirmed the first applicant's stale `CUSTOMER`-role JWT
+still correctly gets rejected with "already have a tailor account" after
+approval, since that check reads the database, not the token. All test
+users/applications/profiles deleted afterward, confirmed via
+`git status` that no stray files were left behind.
+
 **Not built yet:**
-- No endpoint for actually submitting a `BusinessApplication` — the gap
-  called out above. Everything upstream of "approve" is still manual.
 - No admin-frontend parity with Tailors (no Rental Shops tab, no
   suspend/reactivate for `RentalShopProfile` — `BusinessStatus.SUSPENDED`
   is defined and reachable in the enum, but nothing in `admin.service.ts`

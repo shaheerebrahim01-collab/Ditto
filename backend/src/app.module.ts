@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { BusinessApplicationsModule } from './modules/business-applications/business-applications.module';
 import { TailorsModule } from './modules/tailors/tailors.module';
 import { RentalShopsModule } from './modules/rental-shops/rental-shops.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -21,6 +22,7 @@ import { AdminModule } from './modules/admin/admin.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    BusinessApplicationsModule,
     TailorsModule,
     RentalShopsModule,
     OrdersModule,
