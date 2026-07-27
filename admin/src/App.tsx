@@ -7,6 +7,7 @@ import { Overview } from './pages/Overview';
 import { Applications } from './pages/Applications';
 import { Users } from './pages/Users';
 import { Tailors } from './pages/Tailors';
+import { RentalShops } from './pages/RentalShops';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
               <Route path="applications" element={<Applications />} />
               <Route path="users" element={<Users />} />
               <Route path="tailors" element={<Tailors />} />
+              <Route path="rental-shops" element={<RentalShops />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

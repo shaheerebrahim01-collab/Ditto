@@ -93,4 +93,23 @@ export class AdminController {
   reactivateTailor(@Param('id') id: string) {
     return this.adminService.reactivateTailor(id);
   }
+
+  @Get('rental-shops')
+  listRentalShops(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.adminService.listRentalShops(q, parsePage(page, 1, Infinity), parsePage(pageSize, 20, 100));
+  }
+
+  @Post('rental-shops/:id/suspend')
+  suspendRentalShop(@Param('id') id: string) {
+    return this.adminService.suspendRentalShop(id);
+  }
+
+  @Post('rental-shops/:id/reactivate')
+  reactivateRentalShop(@Param('id') id: string) {
+    return this.adminService.reactivateRentalShop(id);
+  }
 }

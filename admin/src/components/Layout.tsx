@@ -47,6 +47,9 @@ export function Layout() {
           <NavLink to="/tailors" className={navClass}>
             <span className="material-symbols-rounded">content_cut</span> Tailors
           </NavLink>
+          <NavLink to="/rental-shops" className={navClass}>
+            <span className="material-symbols-rounded">checkroom</span> Rental shops
+          </NavLink>
         </nav>
         <div className="sidebar-foot">
           <button

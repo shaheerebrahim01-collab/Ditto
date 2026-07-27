@@ -9,7 +9,7 @@ continues this project should read this file first.
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
-- [ ] Phase 7 — Suit rental ops (in progress — backend foundation done: profiles, inventory, bookings, application submission; no admin/mobile UI yet)
+- [ ] Phase 7 — Suit rental ops (in progress — backend foundation and admin dashboard parity done; no mobile UI yet)
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
@@ -466,12 +466,22 @@ approval, since that check reads the database, not the token. All test
 users/applications/profiles deleted afterward, confirmed via
 `git status` that no stray files were left behind.
 
+**Admin-frontend parity with Tailors added:** `GET /admin/rental-shops`
+(search + pagination, same bounded-parse helper as `/admin/tailors`) and
+`POST /admin/rental-shops/:id/suspend` / `/reactivate` in
+`admin.service.ts`/`admin.controller.ts`, mirroring
+`listTailors`/`suspendTailor`/`reactivateTailor` exactly — same
+APPROVED-<->SUSPENDED-only transition rule, same 404-if-missing. Shaped
+result carries `itemCount` (via `items: { select: { id: true } }`)
+instead of Tailor's `completedOrders`, since `RentalShopProfile` has no
+order relation of its own. Admin frontend: new `RentalShops.tsx` page
+(list + search + suspend/reactivate, no create-shop form — provisioning
+still only happens through the application-approval flow, and adding a
+direct-create path wasn't part of this gap), wired into `App.tsx` and
+the `Layout.tsx` sidebar nav. No `CreateTailorModal` equivalent by
+design, not oversight.
+
 **Not built yet:**
-- No admin-frontend parity with Tailors (no Rental Shops tab, no
-  suspend/reactivate for `RentalShopProfile` — `BusinessStatus.SUSPENDED`
-  is defined and reachable in the enum, but nothing in `admin.service.ts`
-  exposes it for rental shops the way `suspendTailor`/`reactivateTailor`
-  do).
 - No mobile UI (customer-side browsing/booking, or a shop-owner app or
   in-app screens) — this phase is backend-only so far.
 - No payments integration on bookings — deposits/late fees are computed

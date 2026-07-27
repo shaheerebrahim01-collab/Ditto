@@ -6,6 +6,7 @@ import type {
   CreateUserInput,
   DittoUser,
   Paginated,
+  RentalShopProfile,
   Role,
   TailorProfile,
 } from './types';
@@ -119,4 +120,19 @@ export const adminApi = {
 
   reactivateTailor: (token: string, id: string) =>
     request<TailorProfile>(`/admin/tailors/${id}/reactivate`, token, { method: 'POST' }),
+
+  listRentalShops: (token: string, params: { q?: string; page?: number; pageSize?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set('q', params.q);
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    const qs = query.toString();
+    return request<Paginated<RentalShopProfile>>(`/admin/rental-shops${qs ? `?${qs}` : ''}`, token);
+  },
+
+  suspendRentalShop: (token: string, id: string) =>
+    request<RentalShopProfile>(`/admin/rental-shops/${id}/suspend`, token, { method: 'POST' }),
+
+  reactivateRentalShop: (token: string, id: string) =>
+    request<RentalShopProfile>(`/admin/rental-shops/${id}/reactivate`, token, { method: 'POST' }),
 };

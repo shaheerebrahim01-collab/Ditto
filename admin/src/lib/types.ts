@@ -68,6 +68,21 @@ export interface TailorProfile {
   };
 }
 
+export interface RentalShopProfile {
+  id: string;
+  userId: string;
+  businessName: string;
+  status: BusinessStatus;
+  ratingAvg: number;
+  ratingCount: number;
+  itemCount: number;
+  user: {
+    fullName: string;
+    email: string | null;
+    phone: string | null;
+  };
+}
+
 export interface Paginated<T> {
   data: T[];
   total: number;

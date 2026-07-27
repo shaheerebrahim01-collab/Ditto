@@ -298,4 +298,64 @@ export class AdminService {
     });
     return this.shapeTailor(updated);
   }
+
+  // Same shape as tailorInclude/shapeTailor above — item count instead of
+  // completed orders, since RentalShopProfile has no order relation of its
+  // own.
+  private rentalShopInclude = {
+    user: { select: { fullName: true, email: true, phone: true } },
+    items: { select: { id: true } },
+  } as const;
+
+  private shapeRentalShop<T extends { items: { id: string }[] }>(shop: T) {
+    const { items, ...rest } = shop;
+    return { ...rest, itemCount: items.length };
+  }
+
+  async listRentalShops(q: string | undefined, page: number, pageSize: number) {
+    const where: Prisma.RentalShopProfileWhereInput = q
+      ? {
+          OR: [
+            { businessName: { contains: q, mode: 'insensitive' } },
+            { user: { fullName: { contains: q, mode: 'insensitive' } } },
+          ],
+        }
+      : {};
+    const [shops, total] = await Promise.all([
+      this.prisma.rentalShopProfile.findMany({
+        where,
+        include: this.rentalShopInclude,
+        orderBy: { businessName: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.rentalShopProfile.count({ where }),
+    ]);
+    return { data: shops.map((s) => this.shapeRentalShop(s)), total, page, pageSize };
+  }
+
+  async suspendRentalShop(id: string) {
+    return this.setRentalShopStatus(id, BusinessStatus.APPROVED, BusinessStatus.SUSPENDED);
+  }
+
+  async reactivateRentalShop(id: string) {
+    return this.setRentalShopStatus(id, BusinessStatus.SUSPENDED, BusinessStatus.APPROVED);
+  }
+
+  // Same APPROVED <-> SUSPENDED-only rule as setTailorStatus.
+  private async setRentalShopStatus(id: string, from: BusinessStatus, to: BusinessStatus) {
+    const shop = await this.prisma.rentalShopProfile.findUnique({ where: { id } });
+    if (!shop) throw new NotFoundException('Rental shop not found');
+    if (shop.status !== from) {
+      throw new BadRequestException(
+        `Cannot move rental shop from ${shop.status.toLowerCase()} to ${to.toLowerCase()}`,
+      );
+    }
+    const updated = await this.prisma.rentalShopProfile.update({
+      where: { id },
+      data: { status: to },
+      include: this.rentalShopInclude,
+    });
+    return this.shapeRentalShop(updated);
+  }
 }
