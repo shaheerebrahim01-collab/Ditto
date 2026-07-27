@@ -2,7 +2,10 @@ import type {
   AdminStats,
   BusinessApplication,
   BusinessStatus,
+  CreateTailorInput,
+  CreateUserInput,
   DittoUser,
+  Paginated,
   Role,
   TailorProfile,
 } from './types';
@@ -77,8 +80,21 @@ export const adminApi = {
       body: { reviewNotes },
     }),
 
-  listUsers: (token: string, role?: Role) =>
-    request<DittoUser[]>(`/admin/users${role ? `?role=${role}` : ''}`, token),
+  listUsers: (
+    token: string,
+    params: { role?: Role; q?: string; page?: number; pageSize?: number } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (params.role) query.set('role', params.role);
+    if (params.q) query.set('q', params.q);
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    const qs = query.toString();
+    return request<Paginated<DittoUser>>(`/admin/users${qs ? `?${qs}` : ''}`, token);
+  },
+
+  createUser: (token: string, input: CreateUserInput) =>
+    request<DittoUser>('/admin/users', token, { method: 'POST', body: input }),
 
   suspendUser: (token: string, id: string) =>
     request<DittoUser>(`/admin/users/${id}/suspend`, token, { method: 'POST' }),
@@ -86,7 +102,17 @@ export const adminApi = {
   reactivateUser: (token: string, id: string) =>
     request<DittoUser>(`/admin/users/${id}/reactivate`, token, { method: 'POST' }),
 
-  listTailors: (token: string) => request<TailorProfile[]>('/admin/tailors', token),
+  listTailors: (token: string, params: { q?: string; page?: number; pageSize?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set('q', params.q);
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    const qs = query.toString();
+    return request<Paginated<TailorProfile>>(`/admin/tailors${qs ? `?${qs}` : ''}`, token);
+  },
+
+  createTailor: (token: string, input: CreateTailorInput) =>
+    request<TailorProfile>('/admin/tailors', token, { method: 'POST', body: input }),
 
   suspendTailor: (token: string, id: string) =>
     request<TailorProfile>(`/admin/tailors/${id}/suspend`, token, { method: 'POST' }),

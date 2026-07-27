@@ -1,6 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BusinessStatus, OrderStage, Role } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BusinessStatus, OrderStage, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateTailorDto } from './dto/create-tailor.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+
+// A user created straight from the admin dashboard hasn't signed in via
+// Firebase yet — auth.service.ts's find-or-create still matches them by
+// email/phone the first time they do, so this is just a marker that the
+// row didn't originate from a real sign-in provider.
+const ADMIN_PROVISIONED = 'admin';
 
 @Injectable()
 export class AdminService {
@@ -74,11 +82,51 @@ export class AdminService {
     });
   }
 
-  async listUsers(role?: Role) {
-    return this.prisma.user.findMany({
-      where: role ? { role } : undefined,
-      orderBy: { createdAt: 'desc' },
-    });
+  async listUsers(role: Role | undefined, q: string | undefined, page: number, pageSize: number) {
+    const where: Prisma.UserWhereInput = {
+      ...(role ? { role } : {}),
+      ...(q
+        ? {
+            OR: [
+              { fullName: { contains: q, mode: 'insensitive' } },
+              { email: { contains: q, mode: 'insensitive' } },
+              { phone: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return { data, total, page, pageSize };
+  }
+
+  async createUser(dto: CreateUserDto) {
+    if (!dto.email && !dto.phone) {
+      throw new BadRequestException('Provide at least an email or a phone number');
+    }
+    try {
+      return await this.prisma.user.create({
+        data: {
+          fullName: dto.fullName,
+          email: dto.email ?? null,
+          phone: dto.phone ?? null,
+          role: dto.role ?? Role.CUSTOMER,
+          authProvider: ADMIN_PROVISIONED,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('A user with that email or phone already exists');
+      }
+      throw err;
+    }
   }
 
   async suspendUser(id: string) {
@@ -110,12 +158,64 @@ export class AdminService {
     return { ...rest, completedOrders: orders.length };
   }
 
-  async listTailors() {
-    const tailors = await this.prisma.tailorProfile.findMany({
-      include: this.tailorInclude,
-      orderBy: { businessName: 'asc' },
-    });
-    return tailors.map((t) => this.shapeTailor(t));
+  async listTailors(q: string | undefined, page: number, pageSize: number) {
+    const where: Prisma.TailorProfileWhereInput = q
+      ? {
+          OR: [
+            { businessName: { contains: q, mode: 'insensitive' } },
+            { user: { fullName: { contains: q, mode: 'insensitive' } } },
+          ],
+        }
+      : {};
+    const [tailors, total] = await Promise.all([
+      this.prisma.tailorProfile.findMany({
+        where,
+        include: this.tailorInclude,
+        orderBy: { businessName: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.tailorProfile.count({ where }),
+    ]);
+    return { data: tailors.map((t) => this.shapeTailor(t)), total, page, pageSize };
+  }
+
+  async createTailor(dto: CreateTailorDto) {
+    if (!dto.email && !dto.phone) {
+      throw new BadRequestException('Provide at least an email or a phone number');
+    }
+    try {
+      const tailor = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            fullName: dto.fullName,
+            email: dto.email ?? null,
+            phone: dto.phone ?? null,
+            role: Role.TAILOR,
+            authProvider: ADMIN_PROVISIONED,
+          },
+        });
+        return tx.tailorProfile.create({
+          data: {
+            userId: user.id,
+            businessName: dto.businessName,
+            bio: dto.bio ?? null,
+            specialties: dto.specialties ?? [],
+            deliveryRadiusKm: dto.deliveryRadiusKm ?? null,
+            // Admin-onboarded directly, bypassing the pending-application
+            // queue — the admin is vetting it out of band.
+            status: BusinessStatus.APPROVED,
+          },
+          include: this.tailorInclude,
+        });
+      });
+      return this.shapeTailor(tailor);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('A user with that email or phone already exists');
+      }
+      throw err;
+    }
   }
 
   async suspendTailor(id: string) {

@@ -8,7 +8,7 @@ continues this project should read this file first.
 - [x] Phase 3 — Authentication
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
-- [ ] Phase 6 — Admin dashboard (in progress — backend API, RBAC, and admin-provisioning script done; no admin frontend yet)
+- [x] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
@@ -170,7 +170,7 @@ Firebase config verified statically (registered app ID matches across
 an actual `flutter build apk` couldn't be run in this environment due to
 an unrelated JDK/Gradle-wrapper TLS certificate issue on this machine.
 
-## Phase 6 — admin dashboard (in progress)
+## Phase 6 — admin dashboard
 
 Backend API in `backend/src/modules/admin/`, plus a frontend now started
 in `admin/` (React + Vite + TypeScript) — not finished, see below.
@@ -287,7 +287,52 @@ exists" gap is closed:
   against a temporary tailor, zero console errors, temp rows deleted
   after).
 
-**Not built yet:** create actions for users or tailors (only listing +
-suspend/reactivate exist); pagination (fine while data volume is this
-low, will matter later).
+**Pagination + create actions for Users and Tailors** — the last "not
+built yet" gap is closed:
+- `GET /admin/users` and `GET /admin/tailors` now take `page`/`pageSize`
+  (default 20, capped at 100) and return `{ data, total, page, pageSize }`
+  instead of a bare array. Added a `q` search param to both at the same
+  time — pagination without it would have silently broken the existing
+  client-side search (it could only ever see whatever page happened to be
+  loaded), so search moved server-side (`contains`/`insensitive` over
+  name/email/phone) to keep the two features composable.
+- `POST /admin/users` creates a `User` row directly (`fullName` required,
+  at least one of `email`/`phone` required, optional `role`). It's
+  deliberately the same shape `auth.service.ts`'s find-or-create already
+  matches on — an admin-provisioned account gets picked up by its real
+  owner the first time they sign in with Firebase, rather than getting a
+  duplicate row. `authProvider` is set to `"admin"` to mark that origin.
+- `POST /admin/tailors` creates a `User` (role `TAILOR`) and its
+  `TailorProfile` together in one transaction, status `APPROVED`
+  (admin-onboarded directly, bypassing the pending-application queue —
+  the admin is vetting it out of band). Worth flagging: this is the
+  *only* code path that creates a `TailorProfile` at all —
+  `approveApplication` only flips a `BusinessApplication`'s status, it
+  never provisions the profile. That gap predates this change and is
+  still open.
+- Both create endpoints return `409 Conflict` on a duplicate email/phone
+  (Prisma `P2002`), `400 Bad Request` if neither email nor phone is
+  given.
+- Frontend: new `Modal` and `Pagination` components (`admin/src/components/`),
+  styled to match the existing cream/gold/copper tokens (no prototype
+  precedent for either — `docs/admin-prototype.html` has neither
+  pagination nor a modal). Users/Tailors pages debounce the search box
+  (300ms) into the new `q` param, reset to page 1 on a new search, and
+  each got an "Add user"/"Add tailor" button opening a form modal;
+  successful creation refreshes the current page's data and the sidebar
+  stat counts via the shared `StatsProvider`.
+
+**Verified:** `npx tsc --noEmit` (backend) and `npm run build` + `npm run
+lint` (admin) all clean. Ran both dev servers for real against the local
+Postgres DB and drove the new endpoints directly with `curl` using a real
+signed JWT for the already-promoted admin account: paginated listing,
+search, successful create, the 400 (no email/phone) and 409 (duplicate)
+paths all returned the right status and body. Then drove the actual UI
+with headless Chromium (Playwright, installed temporarily and removed
+afterward): created a user and a tailor through the modals and watched
+the table update live with zero console errors; created 8 filler users
+to push the count past one page and confirmed the pagination controls
+(page count, Previous/Next disabled state, the "x–y of z" summary) work
+correctly. All test rows deleted afterward, confirmed via `git status`
+that no stray files were left behind.
 

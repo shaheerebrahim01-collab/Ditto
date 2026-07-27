@@ -67,3 +67,27 @@ export interface TailorProfile {
     phone: string | null;
   };
 }
+
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CreateUserInput {
+  fullName: string;
+  email?: string;
+  phone?: string;
+  role?: Role;
+}
+
+export interface CreateTailorInput {
+  fullName: string;
+  email?: string;
+  phone?: string;
+  businessName: string;
+  bio?: string;
+  specialties?: string[];
+  deliveryRadiusKm?: number;
+}
