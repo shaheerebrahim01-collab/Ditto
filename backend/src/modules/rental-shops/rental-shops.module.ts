@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { RentalShopsController } from './rental-shops.controller';
+import { RentalShopsService } from './rental-shops.service';
 
-// RentalShopsModule owns everything under /rental-shops. Empty by design at this phase —
-// see docs/ROADMAP.md for when this module's endpoints land.
-@Module({})
+@Module({
+  imports: [AuthModule], // needed so JwtAuthGuard has something to check against
+  controllers: [RentalShopsController],
+  providers: [RentalShopsService],
+})
 export class RentalShopsModule {}

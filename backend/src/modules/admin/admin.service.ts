@@ -70,16 +70,71 @@ export class AdminService {
     return this.reviewApplication(id, BusinessStatus.REJECTED, reviewNotes);
   }
 
+  // businessType is a free-form string ("tailor" | "rental_shop" | "designer"
+  // | "embroidery", per the schema comment); only the first two have a real
+  // profile model. Designer/embroidery still get the role bump so a future
+  // profile model can pick them up without touching this again.
+  private readonly PROFILE_ROLE: Partial<Record<string, Role>> = {
+    tailor: Role.TAILOR,
+    rental_shop: Role.RENTAL_SHOP,
+    designer: Role.DESIGNER,
+    embroidery: Role.EMBROIDERY_SPECIALIST,
+  };
+
   private async reviewApplication(id: string, status: BusinessStatus, reviewNotes?: string) {
     const application = await this.prisma.businessApplication.findUnique({ where: { id } });
     if (!application) throw new NotFoundException('Business application not found');
     if (application.status !== BusinessStatus.PENDING) {
       throw new BadRequestException(`Application already ${application.status.toLowerCase()}`);
     }
-    return this.prisma.businessApplication.update({
-      where: { id },
-      data: { status, reviewedAt: new Date(), reviewNotes },
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.businessApplication.update({
+        where: { id },
+        data: { status, reviewedAt: new Date(), reviewNotes },
+      });
+
+      if (status === BusinessStatus.APPROVED) {
+        await this.provisionBusinessProfile(tx, application.applicantId, application.businessType);
+      }
+
+      return updated;
     });
+  }
+
+  // Approving used to just flip the application's status — nothing ever
+  // turned the applicant into an actual tailor or rental shop. This is that
+  // missing step. BusinessApplication has no business-name field (same gap
+  // noted in the admin frontend, Phase 6), so the profile starts out named
+  // after the applicant; they can rename it later once shop-profile editing
+  // exists.
+  private async provisionBusinessProfile(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    businessType: string,
+  ) {
+    const role = this.PROFILE_ROLE[businessType];
+    if (!role) return;
+
+    const user = await tx.user.update({
+      where: { id: userId },
+      data: { role },
+      select: { fullName: true },
+    });
+
+    if (businessType === 'tailor') {
+      await tx.tailorProfile.upsert({
+        where: { userId },
+        create: { userId, businessName: user.fullName, status: BusinessStatus.APPROVED },
+        update: { status: BusinessStatus.APPROVED },
+      });
+    } else if (businessType === 'rental_shop') {
+      await tx.rentalShopProfile.upsert({
+        where: { userId },
+        create: { userId, businessName: user.fullName, status: BusinessStatus.APPROVED },
+        update: { status: BusinessStatus.APPROVED },
+      });
+    }
   }
 
   async listUsers(role: Role | undefined, q: string | undefined, page: number, pageSize: number) {

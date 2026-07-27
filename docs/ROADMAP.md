@@ -9,7 +9,7 @@ continues this project should read this file first.
 - [x] Phase 4 — Customer mobile app
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
-- [ ] Phase 7 — Suit rental ops
+- [ ] Phase 7 — Suit rental ops (in progress — backend foundation done: profiles, inventory, bookings; no admin/mobile UI yet)
 - [ ] Phase 8 — AI styling & measurements
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
@@ -335,4 +335,108 @@ to push the count past one page and confirmed the pagination controls
 (page count, Previous/Next disabled state, the "x–y of z" summary) work
 correctly. All test rows deleted afterward, confirmed via `git status`
 that no stray files were left behind.
+
+## Phase 7 — suit rental ops (in progress)
+
+Backend foundation only this round: `RentalShopsModule` and
+`RentalsModule` (`backend/src/modules/rental-shops/`,
+`backend/src/modules/rentals/`) went from empty skeletons (present since
+Phase 1) to real controllers/services. No admin-frontend or mobile-app UI
+yet — see "Not built yet" below.
+
+**Found while reviewing how `BusinessApplication` handles rental-shop
+applicants, fixed first since everything else depends on it:** approving
+an application never did anything beyond flipping its `status` — no
+`RentalShopProfile` (or `TailorProfile`) ever actually got created, so
+there was no way for an approved rental-shop applicant to end up with a
+usable account. There's also no endpoint anywhere that *creates* a
+`BusinessApplication` in the first place — applicants apply through a
+flow that doesn't exist yet, so today the only way one gets into the
+table is a direct DB insert, same as the manual row Phase 6 used to
+verify the approve/reject buttons. Fixed the provisioning half in
+`admin.service.ts`'s `reviewApplication`: on approval, it now bumps the
+applicant's `User.role` and upserts the matching profile
+(`TailorProfile` for `businessType: "tailor"`, `RentalShopProfile` for
+`"rental_shop"`) inside the same transaction as the status update.
+`businessName` starts out as the applicant's own name — `BusinessApplication`
+has no business-name field to draw from (same gap already noted in the
+Phase 6 admin frontend) — until shop-profile editing lets them rename it.
+`designer`/`embroidery` applications get the role bump only; neither has
+a profile model in the schema, so there's nothing else to provision yet.
+Submitting an application at all is still an open gap, unchanged by this
+work.
+
+**`RentalShopsModule` (`/rental-shops/*`):**
+- `GET /rental-shops` — public browse, `APPROVED` shops only, optional
+  `q` search on `businessName`, paginated (`page`/`pageSize`, same
+  bounded-parse helper as `AdminController`'s, copied rather than shared
+  since there's no module both controllers already depend on).
+- `GET /rental-shops/:id` — public shop detail + its items; 404s for
+  anything not `APPROVED` rather than leaking that a pending/rejected
+  shop exists.
+- `GET/PATCH /rental-shops/me` — the signed-in shop owner's own profile
+  (`@Roles(Role.RENTAL_SHOP)`); `PATCH` only exposes `businessName`,
+  since that's the only editable field the schema has for this model.
+- `GET/POST /rental-shops/me/items`, `PATCH/DELETE
+  /rental-shops/me/items/:id` — inventory CRUD, all scoped to the caller's
+  own shop. `DELETE` catches the Prisma FK-constraint error (`P2003`) an
+  item with existing bookings would otherwise throw as a raw 500, and
+  turns it into a `409 Conflict` instead.
+
+**`RentalsModule` (`/rentals/*`):**
+- `POST /rentals` — any logged-in user books an item: validates
+  `returnDate > pickupDate`, `pickupDate` isn't in the past, and that the
+  requested range doesn't overlap an existing `RESERVED`/`PICKED_UP`
+  booking on the same item (a real availability check, not just a
+  well-formed-dates check).
+- `GET /rentals/me`, `POST /rentals/:id/cancel` — renter self-service;
+  cancel only works from `RESERVED` (can't cancel after pickup), and a
+  booking that isn't the caller's own 404s rather than 403s, so a renter
+  can't probe for the existence of someone else's booking ID.
+- `GET /rentals/shop` (optional `?status=`), `POST /rentals/:id/pickup`,
+  `POST /rentals/:id/return` — shop-side (`@Roles(Role.RENTAL_SHOP)`),
+  ownership-scoped through the caller's own `RentalShopProfile`.
+  `return` computes a late fee (`daysLate × item.pricePerDay`, rounded up
+  to a full day) when called after `returnDate`, rather than requiring a
+  separate step. `RentalStatus.LATE` from the schema is intentionally
+  unused — flipping a booking's status automatically as it goes overdue
+  needs a scheduled job, which is Phase 11 infrastructure; `listShopBookings`
+  computes an `overdue` boolean on the fly instead so the shop can see it
+  today without that infra.
+
+**Verified:** `npx tsc --noEmit` clean. Ran the dev server for real
+against the local Postgres DB. Since there's no submit-application
+endpoint, seeded a rental-shop applicant and a `BusinessApplication` row
+directly (same approach Phase 6 used), then drove the entire flow
+through the real HTTP endpoints with `curl` and real signed JWTs:
+approved the application and confirmed the `User.role` flip and
+`RentalShopProfile` creation directly in Postgres; created inventory
+(including the validation-rejection path for a negative price); listed
+and fetched shops/items through the public endpoints; booked an item,
+confirmed a date-overlapping second booking is rejected, confirmed
+past-dates and inverted-range are rejected; confirmed a `CUSTOMER` gets
+`403` on the shop-only `/rentals/shop` route; ran a booking through
+pickup → on-time return (`lateFee: 0`); separately seeded an already-overdue
+`PICKED_UP` booking and confirmed both the `overdue` flag and the
+late-fee math on return; confirmed deleting an item with bookings
+against it returns `409` while a bookings-free item deletes cleanly;
+confirmed cancelling twice and cancelling someone else's booking both
+fail correctly (`400` and `404`). All seeded rows deleted afterward,
+confirmed via `git status` that no stray files were left behind.
+
+**Not built yet:**
+- No endpoint for actually submitting a `BusinessApplication` — the gap
+  called out above. Everything upstream of "approve" is still manual.
+- No admin-frontend parity with Tailors (no Rental Shops tab, no
+  suspend/reactivate for `RentalShopProfile` — `BusinessStatus.SUSPENDED`
+  is defined and reachable in the enum, but nothing in `admin.service.ts`
+  exposes it for rental shops the way `suspendTailor`/`reactivateTailor`
+  do).
+- No mobile UI (customer-side browsing/booking, or a shop-owner app or
+  in-app screens) — this phase is backend-only so far.
+- No payments integration on bookings — deposits/late fees are computed
+  and stored but nothing charges a card; that's Phase 10.
+- No rating-submission path — `ratingAvg`/`ratingCount` exist on
+  `RentalShopProfile` but nothing writes to them yet (same situation
+  `TailorProfile.ratingAvg` was already in before this phase).
 
