@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../dashboard/dashboard_screen.dart';
+import '../measurement_visits/measurement_requests_screen.dart';
 import '../orders/tailor_orders_screen.dart';
 import '../portfolio/portfolio_screen.dart';
 
-// Bottom-nav shell shown once authenticated: Dashboard / Orders / Portfolio.
+// Bottom-nav shell shown once authenticated: Dashboard / Orders / Requests / Portfolio.
 class TailorShell extends StatefulWidget {
   const TailorShell({super.key});
 
@@ -18,6 +19,7 @@ class _TailorShellState extends State<TailorShell> {
   static const _screens = [
     DashboardScreen(),
     TailorOrdersScreen(),
+    MeasurementRequestsScreen(),
     PortfolioScreen(),
   ];
 
@@ -38,6 +40,11 @@ class _TailorShellState extends State<TailorShell> {
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: 'Orders',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.content_paste_search_outlined),
+            selectedIcon: Icon(Icons.content_paste_search),
+            label: 'Requests',
           ),
           NavigationDestination(
             icon: Icon(Icons.photo_library_outlined),

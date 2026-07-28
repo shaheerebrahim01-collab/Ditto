@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/measurement.dart';
+import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
 import '../models/rental_shop.dart';
 import '../models/user.dart';
@@ -116,6 +118,127 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     return RentalBooking.fromJson(_decode(response));
+  }
+
+  // GET /measurements — the signed-in user's own saved measurements.
+  Future<List<Measurement>> listMeasurements(String accessToken) async {
+    final response = await _http.get(
+      _uri('/measurements'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(response).map((e) => Measurement.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // POST /measurements — every field but label is optional, matching the schema.
+  Future<Measurement> createMeasurement(
+    String accessToken, {
+    String? label,
+    double? chest,
+    double? waist,
+    double? hip,
+    double? shoulder,
+    double? sleeve,
+    double? neck,
+    double? inseam,
+    String? notes,
+  }) async {
+    final response = await _http.post(
+      _uri('/measurements'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({
+        if (label != null) 'label': label,
+        if (chest != null) 'chest': chest,
+        if (waist != null) 'waist': waist,
+        if (hip != null) 'hip': hip,
+        if (shoulder != null) 'shoulder': shoulder,
+        if (sleeve != null) 'sleeve': sleeve,
+        if (neck != null) 'neck': neck,
+        if (inseam != null) 'inseam': inseam,
+        if (notes != null) 'notes': notes,
+      }),
+    );
+    return Measurement.fromJson(_decode(response));
+  }
+
+  // PATCH /measurements/:id — partial update, only non-null fields sent.
+  Future<Measurement> updateMeasurement(
+    String accessToken,
+    String id, {
+    String? label,
+    double? chest,
+    double? waist,
+    double? hip,
+    double? shoulder,
+    double? sleeve,
+    double? neck,
+    double? inseam,
+    String? notes,
+  }) async {
+    final response = await _http.patch(
+      _uri('/measurements/$id'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({
+        if (label != null) 'label': label,
+        if (chest != null) 'chest': chest,
+        if (waist != null) 'waist': waist,
+        if (hip != null) 'hip': hip,
+        if (shoulder != null) 'shoulder': shoulder,
+        if (sleeve != null) 'sleeve': sleeve,
+        if (neck != null) 'neck': neck,
+        if (inseam != null) 'inseam': inseam,
+        if (notes != null) 'notes': notes,
+      }),
+    );
+    return Measurement.fromJson(_decode(response));
+  }
+
+  // DELETE /measurements/:id — 409s server-side if a CustomOrder references it.
+  Future<void> deleteMeasurement(String accessToken, String id) async {
+    final response = await _http.delete(
+      _uri('/measurements/$id'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    _decode(response);
+  }
+
+  // POST /measurement-visits — request an in-person measurement visit.
+  Future<MeasurementVisitRequest> createVisitRequest(
+    String accessToken, {
+    required String location,
+    required DateTime preferredAt,
+    String? notes,
+  }) async {
+    final response = await _http.post(
+      _uri('/measurement-visits'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({
+        'location': location,
+        'preferredAt': preferredAt.toIso8601String(),
+        if (notes != null) 'notes': notes,
+      }),
+    );
+    return MeasurementVisitRequest.fromJson(_decode(response));
+  }
+
+  // GET /measurement-visits/me — the signed-in customer's own requests.
+  Future<List<MeasurementVisitRequest>> listMyVisitRequests(String accessToken) async {
+    final response = await _http.get(
+      _uri('/measurement-visits/me'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(
+      response,
+    ).map((e) => MeasurementVisitRequest.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // POST /measurement-visits/:id/cancel — only works from PENDING/ASSIGNED,
+  // enforced server-side.
+  Future<MeasurementVisitRequest> cancelVisitRequest(String accessToken, String id) async {
+    final response = await _http.post(
+      _uri('/measurement-visits/$id/cancel'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return MeasurementVisitRequest.fromJson(_decode(response));
   }
 
   Map<String, dynamic> _decode(http.Response response) {

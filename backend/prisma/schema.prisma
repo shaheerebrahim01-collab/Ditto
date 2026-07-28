@@ -51,6 +51,13 @@ enum AssistantStatus {
   SUSPENDED
 }
 
+enum VisitRequestStatus {
+  PENDING
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
 // ── Identity ────────────────────────────────────────────────────────────
 
 model User {
@@ -66,15 +73,16 @@ model User {
   updatedAt    DateTime @updatedAt
 
   measurements   Measurement[]
+  visitRequests  MeasurementVisitRequest[] @relation("VisitRequestCustomer")
   addresses      Address[]
-  orders         CustomOrder[]   @relation("CustomerOrders")
-  reviews        Review[]        @relation("ReviewAuthor")
+  orders         CustomOrder[]             @relation("CustomerOrders")
+  reviews        Review[]                  @relation("ReviewAuthor")
   wishlist       WishlistItem[]
   notifications  Notification[]
   messages       Message[]
   tailorProfile  TailorProfile?
   rentalShop     RentalShopProfile?
-  rentalBookings RentalBooking[] @relation("Renter")
+  rentalBookings RentalBooking[]           @relation("Renter")
 
   referralCode String? @unique
   referredById String?
@@ -98,6 +106,28 @@ model Measurement {
   createdAt DateTime @default(now())
 
   orders CustomOrder[]
+}
+
+// A customer asking for an in-person measurement visit instead of
+// self-reporting one. Starts unassigned (tailorId null, open to any
+// tailor to claim) rather than pointed at a tailor the customer already
+// picked — the one dispatch-from-a-pool shape this project doesn't
+// otherwise have (CustomOrder always starts with a tailor the customer
+// chose up front).
+model MeasurementVisitRequest {
+  id          String             @id @default(cuid())
+  customerId  String
+  customer    User               @relation("VisitRequestCustomer", fields: [customerId], references: [id])
+  location    String
+  preferredAt DateTime
+  notes       String?
+  status      VisitRequestStatus @default(PENDING)
+  tailorId    String?
+  tailor      TailorProfile?     @relation(fields: [tailorId], references: [id])
+  assistantId String?
+  assistant   TailorAssistant?   @relation(fields: [assistantId], references: [id])
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 }
 
 model Address {
@@ -128,9 +158,10 @@ model TailorProfile {
   ratingAvg        Float          @default(0)
   ratingCount      Int            @default(0)
 
-  portfolio  PortfolioItem[]
-  orders     CustomOrder[]     @relation("TailorOrders")
-  assistants TailorAssistant[]
+  portfolio     PortfolioItem[]
+  orders        CustomOrder[]             @relation("TailorOrders")
+  assistants    TailorAssistant[]
+  visitRequests MeasurementVisitRequest[]
 }
 
 // Not an app login/role — tailor assistants complete training, earn a
@@ -146,6 +177,8 @@ model TailorAssistant {
   status              AssistantStatus @default(IN_TRAINING)
   registeredAtOffice  String?
   createdAt           DateTime        @default(now())
+
+  visitRequests MeasurementVisitRequest[]
 }
 
 model RentalShopProfile {
@@ -198,21 +231,21 @@ model PortfolioItem {
 // ── Orders, payments, reviews ──────────────────────────────────────────
 
 model CustomOrder {
-  id              String       @id @default(cuid())
+  id              String        @id @default(cuid())
   customerId      String
-  customer        User         @relation("CustomerOrders", fields: [customerId], references: [id])
+  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
   tailorId        String
   tailor          TailorProfile @relation("TailorOrders", fields: [tailorId], references: [id])
   garmentType     String
   fabric          String
   detailsJson     Json?
   measurementId   String?
-  measurement     Measurement? @relation(fields: [measurementId], references: [id])
+  measurement     Measurement?  @relation(fields: [measurementId], references: [id])
   price           Float
-  stage           OrderStage   @default(ORDER_CONFIRMED)
+  stage           OrderStage    @default(ORDER_CONFIRMED)
   estDeliveryDate DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   review  Review?
   payment Payment?

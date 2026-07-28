@@ -10,7 +10,7 @@ continues this project should read this file first.
 - [x] Phase 5 — Tailor mobile app
 - [x] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops (in progress — backend, admin dashboard, and mobile UI done; no payments or ratings yet)
-- [ ] Phase 8 — AI styling & measurements (approach decided, nothing built yet)
+- [ ] Phase 8 — AI styling & measurements (measurements + visit-request done end-to-end; styling scaffolded, blocked on `ANTHROPIC_API_KEY`)
 - [ ] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
 - [ ] Phase 11 — Production infrastructure
@@ -587,11 +587,12 @@ accounts or log out without clearing browser storage by hand.
 - No sign-out UI in `tailor_app` (see gap above) — a small follow-up,
   not scoped to any phase yet.
 
-## Phase 8 — AI styling & measurements (design decided, not started)
+## Phase 8 — AI styling & measurements (in progress)
 
-Two independent pieces. This entry records the agreed technical
-approach and the reasoning behind it — no schema migrations, endpoints,
-or screens exist yet for either piece.
+Two independent pieces. This entry originally recorded just the agreed
+technical approach; the measurements/visit-request piece is now built
+and verified end-to-end, the styling piece is scaffolded and blocked on
+a credential — see "Built" and "Verified" below.
 
 **Body measurements — "Get your right size today" (in-person visit
 request), not photo/pose estimation.** A photo-based approach (on-device
@@ -646,4 +647,97 @@ required before this piece can be built for real. Same approach this
 project has used at every prior credential point (Firebase in Phases
 3/6): ask for exactly what's needed, exactly when it's needed, rather
 than stub it out.
+
+**Built — measurements + visit-request, end to end.**
+
+Schema: `VisitRequestStatus` enum (`PENDING`/`ASSIGNED`/`COMPLETED`/
+`CANCELLED`) and `MeasurementVisitRequest` (`customerId`, `location`,
+`preferredAt`, `notes`, `status`, nullable `tailorId`/`assistantId`),
+migration `20260728001544_add_measurement_visit_requests`. Matches the
+proposed shape above exactly: starts unassigned, open to any tailor to
+claim, rather than pointed at a tailor the customer already picked.
+
+`MeasurementsModule` (`/measurements`) — `GET`/`POST`/`PATCH`/`DELETE`,
+every route self-scoped off the caller's own JWT (no "whose measurement"
+param anywhere, same reasoning `/rentals/me` uses). `DELETE` catches the
+FK-constraint error a `CustomOrder` referencing the measurement would
+otherwise throw as a raw 500, turning it into a `409 Conflict` — same
+pattern `RentalShopsService` already uses for `RentalItem`.
+
+`MeasurementVisitsModule` (`/measurement-visits`) — customer side:
+`POST` (rejects a `preferredAt` in the past), `GET /me`, `POST
+/:id/cancel` (only from `PENDING`/`ASSIGNED`). Tailor side
+(`@Roles(Role.TAILOR)`): `GET /available` (the open, unclaimed pool,
+every tailor sees the same list), `GET /assigned` (this tailor's own
+claims, optional `?status=`), `POST /:id/claim` (only from `PENDING`;
+takes an optional `assistantId`, checked against the claiming tailor's
+own `TailorAssistant` roster if given), `POST /:id/complete` (only from
+`ASSIGNED`, only for the tailor who claimed it). The tailor-facing list
+endpoints include the customer's `fullName`/`email`/`phone` so a tailor
+can actually reach the person before showing up.
+
+Manual measurement entry/edit form — `customer_app`'s "Saved
+Measurements" screen (`measurements_screen.dart`) went from read-only
+mock data to a real bottom-sheet add/edit form against the endpoints
+above, mirroring `RentalShopInventoryScreen`'s existing pattern for the
+same shape of problem (a self-owned list with add/edit/delete). The
+mock `SavedMeasurement` model and its seed data
+(`models/saved_measurement.dart`, the `mockMeasurements` list in
+`mock_profile_data.dart`) are gone, replaced by a real `Measurement`
+model matching the Prisma model field-for-field. A new
+`MeasurementVisitScreen`, reached from a banner at the top of the same
+screen ("Get your right size today"), submits `POST /measurement-visits`
+and lists/cancels the caller's own requests — no tailor picker, since
+the request goes into the open pool above.
+
+Tailor-side dispatch — `tailor_app` gained a fourth bottom-nav tab,
+"Requests" (`MeasurementRequestsScreen`, sibling to the existing Orders
+queue, per the original design note), with "Available to claim" /
+"Needs visit" / "History" sections against `GET /available`, `GET
+/assigned`, `POST /:id/claim`, `POST /:id/complete`. No assistant-picker
+UI yet — `claimVisitRequest` always claims under the tailor's own name
+(`assistantId` omitted), since there's no roster-listing endpoint for
+the app to pick one from today; the field exists on both the schema and
+the DTO so wiring a picker in later is additive, not a schema change.
+
+**Verified against the live backend** (local Postgres, real HTTP calls
+— no mocks): `npm install`, `npx prisma generate`, and the new migration
+all ran clean against this machine's real network access (unlike the
+sandboxed environment Phases 2/3 hit — no `binaries.prisma.sh` allowlist
+gap here). `npm run build` and `npx tsc --noEmit` — zero errors. `npm
+test` — 2/2 passing, unaffected by this phase. Ran `start:dev` for real
+and drove every new endpoint with `curl` against signed JWTs for a
+throwaway customer and a throwaway `APPROVED` tailor (created directly
+via Prisma, cleaned up after):
+- Measurements: created, listed, patched (`chest` 40 → 41), deleted,
+  confirmed the list is empty afterward.
+- Visit requests: a past `preferredAt` is rejected (`400`); a valid
+  submission lands as `PENDING` with `tailorId: null`; the customer's
+  own `GET /me` shows it; a `CUSTOMER` gets `403` on the tailor-only
+  `GET /available`; the tailor sees it in the open pool, complete with
+  the customer's name/email; claim moves it to `ASSIGNED` and empties
+  the pool; a second claim attempt on the same request is rejected
+  (`400`, "already assigned"); `complete` moves it to `COMPLETED`; a
+  second `complete` and a customer `cancel` on the now-`COMPLETED`
+  request are both correctly rejected.
+- Styling: `POST /styling/recommend` without a token gets `401`; with a
+  token but no `ANTHROPIC_API_KEY` gets a clean `503` ("Styling
+  recommendations are not configured yet...") rather than a raw SDK
+  crash; an invalid body (missing `occasion`) gets `400` from
+  `ValidationPipe` before ever reaching the service.
+
+All test rows deleted afterward via the same Prisma connection; the
+now-deleted customer's JWT was re-checked and correctly rejected
+(`401`), confirming cleanup actually took effect rather than just
+returning success.
+
+`flutter analyze` — zero issues in both `customer_app` and `tailor_app`
+after all of the above (`flutter pub get` clean in both first). **Not
+verified here:** neither app's new screens were driven through an
+actual Chrome session this round — doing that honestly would need a
+fresh Firebase-authenticated test account, same as Phase 7's rental
+verification, and that step was skipped this time. The Dart
+`fromJson`/request shapes were instead checked directly against the
+real JSON the endpoints above returned, not assumed — same rigor, just
+one layer short of a live UI drive.
 

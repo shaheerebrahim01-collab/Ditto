@@ -1,22 +1,6 @@
 import '../models/saved_address.dart';
-import '../models/saved_measurement.dart';
 import '../models/saved_payment_method.dart';
 import '../models/wishlist_entry.dart';
-
-const mockMeasurements = [
-  SavedMeasurement(
-    id: 'm1',
-    label: 'Default',
-    chest: 40,
-    waist: 34,
-    hip: 41,
-    shoulder: 18,
-    sleeve: 25,
-    neck: 15.5,
-    inseam: 32,
-  ),
-  SavedMeasurement(id: 'm2', label: 'Wedding Sherwani', chest: 41, waist: 35, shoulder: 18.5, sleeve: 25.5),
-];
 
 const mockAddresses = [
   SavedAddress(id: 'a1', label: 'Home', line1: '221B Baker Street', city: 'Karachi', country: 'Pakistan'),

@@ -1,8 +1,6 @@
-// Mirrors backend/prisma/schema.prisma's Measurement model. No
-// GET /measurements endpoint exists yet (Phase 8+, see docs/ROADMAP.md), so
-// ProfileScreen renders this against local mock data for now.
-class SavedMeasurement {
-  const SavedMeasurement({
+// Mirrors backend/prisma/schema.prisma's Measurement model.
+class Measurement {
+  const Measurement({
     required this.id,
     required this.label,
     this.chest,
@@ -12,7 +10,21 @@ class SavedMeasurement {
     this.sleeve,
     this.neck,
     this.inseam,
+    this.notes,
   });
+
+  factory Measurement.fromJson(Map<String, dynamic> json) => Measurement(
+    id: json['id'] as String,
+    label: json['label'] as String,
+    chest: (json['chest'] as num?)?.toDouble(),
+    waist: (json['waist'] as num?)?.toDouble(),
+    hip: (json['hip'] as num?)?.toDouble(),
+    shoulder: (json['shoulder'] as num?)?.toDouble(),
+    sleeve: (json['sleeve'] as num?)?.toDouble(),
+    neck: (json['neck'] as num?)?.toDouble(),
+    inseam: (json['inseam'] as num?)?.toDouble(),
+    notes: json['notes'] as String?,
+  );
 
   final String id;
   final String label;
@@ -23,6 +35,7 @@ class SavedMeasurement {
   final double? sleeve;
   final double? neck;
   final double? inseam;
+  final String? notes;
 
   Map<String, double> get values => {
     if (chest != null) 'Chest': chest!,

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
 import '../models/rental_item.dart';
 import '../models/rental_shop.dart';
@@ -163,6 +164,50 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     return RentalBooking.fromJson(_decode(response));
+  }
+
+  // GET /measurement-visits/available — the open pool of unclaimed
+  // requests, same for every tailor until one of them claims it.
+  Future<List<MeasurementVisitRequest>> listAvailableVisitRequests(String accessToken) async {
+    final response = await _http.get(
+      _uri('/measurement-visits/available'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(
+      response,
+    ).map((e) => MeasurementVisitRequest.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // GET /measurement-visits/assigned — requests this tailor has claimed.
+  Future<List<MeasurementVisitRequest>> listAssignedVisitRequests(String accessToken) async {
+    final response = await _http.get(
+      _uri('/measurement-visits/assigned'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(
+      response,
+    ).map((e) => MeasurementVisitRequest.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // POST /measurement-visits/:id/claim — only works from PENDING, enforced
+  // server-side; assistantId is optional (no roster-picker UI yet).
+  Future<MeasurementVisitRequest> claimVisitRequest(String accessToken, String id) async {
+    final response = await _http.post(
+      _uri('/measurement-visits/$id/claim'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode(<String, dynamic>{}),
+    );
+    return MeasurementVisitRequest.fromJson(_decode(response));
+  }
+
+  // POST /measurement-visits/:id/complete — only works from ASSIGNED and
+  // only for the tailor who claimed it, enforced server-side.
+  Future<MeasurementVisitRequest> completeVisitRequest(String accessToken, String id) async {
+    final response = await _http.post(
+      _uri('/measurement-visits/$id/complete'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return MeasurementVisitRequest.fromJson(_decode(response));
   }
 
   Map<String, dynamic> _decode(http.Response response) {
