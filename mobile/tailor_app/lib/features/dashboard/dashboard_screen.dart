@@ -5,9 +5,12 @@ import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../data/mock_tailor_data.dart';
 import '../../models/tailor_order.dart';
+import '../messages/messages_list_screen.dart';
+import '../notifications/notifications_screen.dart';
 
 // Renders against local mock data — no tailor dashboard endpoint exists yet
-// (Phase 5+, see docs/ROADMAP.md).
+// (Phase 5+, see docs/ROADMAP.md). Messages/Notifications actions are real,
+// though — those endpoints exist regardless of the dashboard stats.
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
@@ -16,7 +19,23 @@ class DashboardScreen extends StatelessWidget {
     final user = context.watch<AuthRepository>().currentUser;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard')),
+      appBar: AppBar(
+        title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MessagesListScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [

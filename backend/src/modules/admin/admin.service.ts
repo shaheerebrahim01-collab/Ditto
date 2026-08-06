@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessStatus, OrderStage, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTailorDto } from './dto/create-tailor.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 
@@ -12,7 +13,10 @@ const ADMIN_PROVISIONED = 'admin';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async getStats() {
     const startOfMonth = new Date();
@@ -88,7 +92,7 @@ export class AdminService {
       throw new BadRequestException(`Application already ${application.status.toLowerCase()}`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.businessApplication.update({
         where: { id },
         data: { status, reviewedAt: new Date(), reviewNotes },
@@ -100,6 +104,18 @@ export class AdminService {
 
       return updated;
     });
+
+    const approved = status === BusinessStatus.APPROVED;
+    await this.notificationsService.create(
+      application.applicantId,
+      approved ? 'application_approved' : 'application_rejected',
+      approved ? 'Application approved' : 'Application declined',
+      approved
+        ? `Your ${application.businessType} application was approved.`
+        : `Your ${application.businessType} application was declined.${reviewNotes ? ` ${reviewNotes}` : ''}`,
+    );
+
+    return result;
   }
 
   // Approving used to just flip the application's status — nothing ever
@@ -198,7 +214,16 @@ export class AdminService {
     if (user.suspended === suspended) {
       throw new BadRequestException(`User is already ${suspended ? 'suspended' : 'active'}`);
     }
-    return this.prisma.user.update({ where: { id }, data: { suspended } });
+    const updated = await this.prisma.user.update({ where: { id }, data: { suspended } });
+    await this.notificationsService.create(
+      id,
+      suspended ? 'account_suspended' : 'account_reactivated',
+      suspended ? 'Account suspended' : 'Account reactivated',
+      suspended
+        ? 'Your account has been suspended. Contact support if you believe this is a mistake.'
+        : 'Your account has been reactivated.',
+    );
+    return updated;
   }
 
   // Only the order count is needed here, not the orders themselves —
@@ -296,6 +321,7 @@ export class AdminService {
       data: { status: to },
       include: this.tailorInclude,
     });
+    await this.notifyBusinessStatusChange(updated.userId, to);
     return this.shapeTailor(updated);
   }
 
@@ -356,6 +382,21 @@ export class AdminService {
       data: { status: to },
       include: this.rentalShopInclude,
     });
+    await this.notifyBusinessStatusChange(updated.userId, to);
     return this.shapeRentalShop(updated);
+  }
+
+  // Shared by setTailorStatus/setRentalShopStatus — same suspend/reactivate
+  // wording either way, only the underlying User being notified differs.
+  private async notifyBusinessStatusChange(userId: string, status: BusinessStatus) {
+    const suspended = status === BusinessStatus.SUSPENDED;
+    await this.notificationsService.create(
+      userId,
+      suspended ? 'account_suspended' : 'account_reactivated',
+      suspended ? 'Account suspended' : 'Account reactivated',
+      suspended
+        ? 'Your business account has been suspended. Contact support if you believe this is a mistake.'
+        : 'Your business account has been reactivated.',
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../models/tailor_summary.dart';
+import '../notifications/notifications_screen.dart';
 import '../tailor_profile/tailor_profile_screen.dart';
 import 'home_mock_data.dart';
 
@@ -96,7 +97,9 @@ class _Header extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined, color: DittoColors.brown),
-            onPressed: () {},
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
           ),
         ],
       ),

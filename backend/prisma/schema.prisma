@@ -72,17 +72,19 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  measurements   Measurement[]
-  visitRequests  MeasurementVisitRequest[] @relation("VisitRequestCustomer")
-  addresses      Address[]
-  orders         CustomOrder[]             @relation("CustomerOrders")
-  reviews        Review[]                  @relation("ReviewAuthor")
-  wishlist       WishlistItem[]
-  notifications  Notification[]
-  messages       Message[]
-  tailorProfile  TailorProfile?
-  rentalShop     RentalShopProfile?
-  rentalBookings RentalBooking[]           @relation("Renter")
+  measurements     Measurement[]
+  visitRequests    MeasurementVisitRequest[] @relation("VisitRequestCustomer")
+  addresses        Address[]
+  orders           CustomOrder[]             @relation("CustomerOrders")
+  reviews          Review[]                  @relation("ReviewAuthor")
+  wishlist         WishlistItem[]
+  notifications    Notification[]
+  messages         Message[]
+  conversationsAsA Conversation[]            @relation("ConversationAsA")
+  conversationsAsB Conversation[]            @relation("ConversationAsB")
+  tailorProfile    TailorProfile?
+  rentalShop       RentalShopProfile?
+  rentalBookings   RentalBooking[]           @relation("Renter")
 
   referralCode String? @unique
   referredById String?
@@ -285,15 +287,36 @@ model WishlistItem {
 
 // ── Comms ───────────────────────────────────────────────────────────────
 
+// Always exactly two participants — every conversation in this app is a
+// 1:1 thread (customer<->tailor, customer<->rental shop, etc.), never a
+// group chat. userAId/userBId are canonicalized (lower id first) by
+// MessagingService so starting a conversation from either direction finds
+// the same row instead of creating a duplicate.
+model Conversation {
+  id        String   @id @default(cuid())
+  userAId   String
+  userA     User     @relation("ConversationAsA", fields: [userAId], references: [id])
+  userBId   String
+  userB     User     @relation("ConversationAsB", fields: [userBId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+
+  @@unique([userAId, userBId])
+}
+
 model Message {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
   senderId       String
-  sender         User     @relation(fields: [senderId], references: [id])
+  sender         User         @relation(fields: [senderId], references: [id])
   body           String?
   attachmentUrl  String?
   attachmentType String? // image | voice | video
-  createdAt      DateTime @default(now())
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
 }
 
 model Notification {

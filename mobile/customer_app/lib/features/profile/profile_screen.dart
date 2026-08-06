@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
+import '../messages/messages_list_screen.dart';
 import 'address_book_screen.dart';
 import 'favorite_tailors_screen.dart';
 import 'measurements_screen.dart';
@@ -62,6 +63,13 @@ class ProfileScreen extends StatelessWidget {
                   label: 'Saved Measurements',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const MeasurementsScreen()),
+                  ),
+                ),
+                _MenuRow(
+                  icon: Icons.chat_bubble_outline,
+                  label: 'Messages',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MessagesListScreen()),
                   ),
                 ),
                 _MenuRow(

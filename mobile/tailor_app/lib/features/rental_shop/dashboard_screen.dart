@@ -8,6 +8,8 @@ import '../../models/rental_booking.dart';
 import '../../models/rental_item.dart';
 import '../../models/rental_shop.dart';
 import '../../models/rental_status.dart';
+import '../messages/messages_list_screen.dart';
+import '../notifications/notifications_screen.dart';
 
 // Shop-owner overview: shop profile, inventory/booking counts, and bookings
 // currently in flight (reserved or picked up). GET /rental-shops/me,
@@ -72,7 +74,23 @@ class _RentalShopDashboardScreenState extends State<RentalShopDashboardScreen> {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard')),
+      appBar: AppBar(
+        title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MessagesListScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(

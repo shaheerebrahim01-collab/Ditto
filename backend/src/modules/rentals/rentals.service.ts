@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { RentalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateRentalBookingDto } from './dto/create-rental-booking.dto';
 
 const ACTIVE_STATUSES: RentalStatus[] = [RentalStatus.RESERVED, RentalStatus.PICKED_UP];
@@ -12,7 +13,10 @@ const bookingInclude = {
 
 @Injectable()
 export class RentalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async createBooking(renterId: string, dto: CreateRentalBookingDto) {
     const pickupDate = new Date(dto.pickupDate);
@@ -26,7 +30,10 @@ export class RentalsService {
       throw new BadRequestException('pickupDate cannot be in the past');
     }
 
-    const item = await this.prisma.rentalItem.findUnique({ where: { id: dto.itemId } });
+    const item = await this.prisma.rentalItem.findUnique({
+      where: { id: dto.itemId },
+      include: { shop: { select: { userId: true } } },
+    });
     if (!item) throw new NotFoundException('Rental item not found');
 
     // Overlap: an existing active booking's range intersects the requested
@@ -44,10 +51,17 @@ export class RentalsService {
       throw new BadRequestException('This item is already booked for part of that date range');
     }
 
-    return this.prisma.rentalBooking.create({
+    const booking = await this.prisma.rentalBooking.create({
       data: { itemId: item.id, renterId, pickupDate, returnDate },
       include: bookingInclude,
     });
+    await this.notificationsService.create(
+      item.shop.userId,
+      'booking_created',
+      'New rental booking',
+      `${booking.item.name} was just booked.`,
+    );
+    return booking;
   }
 
   async listMyBookings(renterId: string) {
@@ -110,10 +124,19 @@ export class RentalsService {
       const daysLate = Math.ceil((now.getTime() - booking.returnDate.getTime()) / MS_PER_DAY);
       lateFee = daysLate * booking.item.pricePerDay;
     }
-    return this.prisma.rentalBooking.update({
+    const updated = await this.prisma.rentalBooking.update({
       where: { id },
       data: { status: RentalStatus.RETURNED, lateFee },
     });
+    await this.notificationsService.create(
+      booking.renterId,
+      'booking_returned',
+      'Rental return confirmed',
+      lateFee > 0
+        ? `Your return was confirmed with a late fee of $${lateFee.toFixed(2)}.`
+        : 'Your rental return was confirmed — thanks for returning it on time.',
+    );
+    return updated;
   }
 
   private async getShopOrThrow(userId: string) {

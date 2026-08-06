@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/app_notification.dart';
+import '../models/chat_message.dart';
+import '../models/conversation_summary.dart';
 import '../models/measurement.dart';
 import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
@@ -239,6 +242,103 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     return MeasurementVisitRequest.fromJson(_decode(response));
+  }
+
+  // POST /conversations — find-or-create the thread with otherUserId.
+  // Returns just the id; the caller already knows who they're messaging
+  // (the screen that triggered this already has the other participant's
+  // name/role on hand), so there's no need to round-trip that back out.
+  Future<String> startConversation(String accessToken, String otherUserId) async {
+    final response = await _http.post(
+      _uri('/conversations'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({'otherUserId': otherUserId}),
+    );
+    return _decode(response)['id'] as String;
+  }
+
+  // GET /conversations — the signed-in user's own threads, newest-active first.
+  Future<List<ConversationSummary>> listConversations(String accessToken) async {
+    final response = await _http.get(
+      _uri('/conversations'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(
+      response,
+    ).map((e) => ConversationSummary.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // GET /conversations/:id/messages — newest first, matching every other
+  // paginated list in this app.
+  Future<List<ChatMessage>> listMessages(String accessToken, String conversationId) async {
+    final response = await _http.get(
+      _uri('/conversations/$conversationId/messages'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    final body = _decode(response);
+    return (body['data'] as List<dynamic>)
+        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // POST /conversations/:id/messages — text only for now; attachmentUrl/Type
+  // exist server-side but there's no upload flow wired to any screen yet.
+  Future<ChatMessage> sendMessage(String accessToken, String conversationId, String body) async {
+    final response = await _http.post(
+      _uri('/conversations/$conversationId/messages'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({'body': body}),
+    );
+    return ChatMessage.fromJson(_decode(response));
+  }
+
+  // POST /conversations/:id/read — marks the other participant's messages
+  // read; called when a chat thread opens.
+  Future<void> markConversationRead(String accessToken, String conversationId) async {
+    final response = await _http.post(
+      _uri('/conversations/$conversationId/read'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    _decode(response);
+  }
+
+  // GET /notifications
+  Future<List<AppNotification>> listNotifications(String accessToken) async {
+    final response = await _http.get(
+      _uri('/notifications'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    final body = _decode(response);
+    return (body['data'] as List<dynamic>)
+        .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // GET /notifications/unread-count — used for the bell-icon badge.
+  Future<int> unreadNotificationCount(String accessToken) async {
+    final response = await _http.get(
+      _uri('/notifications/unread-count'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decode(response)['count'] as int;
+  }
+
+  // POST /notifications/:id/read
+  Future<void> markNotificationRead(String accessToken, String id) async {
+    final response = await _http.post(
+      _uri('/notifications/$id/read'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    _decode(response);
+  }
+
+  // POST /notifications/read-all
+  Future<void> markAllNotificationsRead(String accessToken) async {
+    final response = await _http.post(
+      _uri('/notifications/read-all'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    _decode(response);
   }
 
   Map<String, dynamic> _decode(http.Response response) {

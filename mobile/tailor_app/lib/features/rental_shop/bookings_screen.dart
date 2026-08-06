@@ -6,6 +6,7 @@ import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../models/rental_booking.dart';
 import '../../models/rental_status.dart';
+import '../messages/chat_screen.dart';
 
 // Shop-side bookings against GET /rentals/shop, POST /rentals/:id/pickup,
 // POST /rentals/:id/return — all real endpoints. Split into "Needs pickup"
@@ -56,6 +57,26 @@ class _RentalShopBookingsScreenState extends State<RentalShopBookingsScreen> {
     booking,
     (accessToken) => _api.markRentalReturned(accessToken, booking.id),
   );
+
+  Future<void> _messageRenter(RentalBooking booking) async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    try {
+      final conversationId = await _api.startConversation(accessToken, booking.renterId);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: conversationId,
+            otherUserName: booking.renter?.fullName ?? 'Renter',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to start conversation')));
+    }
+  }
 
   Future<void> _runAction(RentalBooking booking, Future<RentalBooking> Function(String) action) async {
     final accessToken = context.read<AuthRepository>().accessToken;
@@ -114,6 +135,7 @@ class _RentalShopBookingsScreenState extends State<RentalShopBookingsScreen> {
                 busy: _busyIds.contains(b.id),
                 actionLabel: 'Mark picked up',
                 onAction: () => _markPickedUp(b),
+                onMessage: () => _messageRenter(b),
               ),
             ),
           const SizedBox(height: 28),
@@ -128,13 +150,14 @@ class _RentalShopBookingsScreenState extends State<RentalShopBookingsScreen> {
                 busy: _busyIds.contains(b.id),
                 actionLabel: 'Mark returned',
                 onAction: () => _markReturned(b),
+                onMessage: () => _messageRenter(b),
               ),
             ),
           if (history.isNotEmpty) ...[
             const SizedBox(height: 28),
             Text('History', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
-            ...history.map((b) => _BookingCard(booking: b, busy: false)),
+            ...history.map((b) => _BookingCard(booking: b, busy: false, onMessage: () => _messageRenter(b))),
           ],
         ],
       ),
@@ -143,12 +166,19 @@ class _RentalShopBookingsScreenState extends State<RentalShopBookingsScreen> {
 }
 
 class _BookingCard extends StatelessWidget {
-  const _BookingCard({required this.booking, required this.busy, this.actionLabel, this.onAction});
+  const _BookingCard({
+    required this.booking,
+    required this.busy,
+    this.actionLabel,
+    this.onAction,
+    this.onMessage,
+  });
 
   final RentalBooking booking;
   final bool busy;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final VoidCallback? onMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +219,12 @@ class _BookingCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onMessage != null)
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                  onPressed: onMessage,
+                  tooltip: 'Message renter',
+                ),
             ],
           ),
           const SizedBox(height: 4),

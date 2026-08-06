@@ -11,7 +11,7 @@ continues this project should read this file first.
 - [x] Phase 6 — Admin dashboard
 - [ ] Phase 7 — Suit rental ops (in progress — backend, admin dashboard, and mobile UI done; no payments or ratings yet)
 - [ ] Phase 8 — AI styling & measurements (measurements + visit-request done end-to-end; styling scaffolded, blocked on `ANTHROPIC_API_KEY`)
-- [ ] Phase 9 — Messaging & notifications
+- [x] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments
 - [ ] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA
@@ -740,4 +740,172 @@ verification, and that step was skipped this time. The Dart
 `fromJson`/request shapes were instead checked directly against the
 real JSON the endpoints above returned, not assumed — same rigor, just
 one layer short of a live UI drive.
+
+## Phase 9 — messaging & notifications
+
+Two new backend modules, built from empty skeletons to real
+controllers/services, plus notification-emission wired into every
+existing module that has a real lifecycle event worth telling someone
+about.
+
+**Schema:** `Message.conversationId` was previously a bare string with
+no relation — nothing could actually create one. Added a `Conversation`
+model (`userAId`/`userBId`, `@@unique([userAId, userBId])`), migration
+`20260806043228_add_conversations`. Every conversation in this app is a
+1:1 thread (customer<->tailor, customer<->rental shop, etc.), never a
+group chat, so two participant columns are enough — `MessagingService`
+canonicalizes the pair (lower id first) before every lookup/upsert so
+starting a thread from either direction always lands on the same row.
+Also added `Message.readAt` (nullable) for per-message read receipts,
+separate from `Notification.read` — a message being read and its
+accompanying notification being read are tracked independently, same as
+a real chat app.
+
+**`MessagingModule` (`/conversations/*`):**
+- `POST /conversations` — find-or-create the thread with `otherUserId`
+  (`upsert` on the compound unique key, not find-then-create, to avoid a
+  race between the two). Rejects messaging yourself (`400`) and an
+  unknown `otherUserId` (`404`).
+- `GET /conversations` — the caller's own threads, newest-active first
+  (`orderBy: updatedAt desc`), each with the other participant's
+  name/avatar/role, a `lastMessage` preview, and `unreadCount` (a
+  `groupBy` over unread messages not sent by the caller).
+- `GET /conversations/:id/messages` (paginated, bounded page/pageSize
+  like every other list endpoint), `POST /conversations/:id/messages`,
+  `POST /conversations/:id/read` — all self-scoped off the caller's own
+  participation; a non-participant gets `404`, not `403`, matching the
+  rest of the API's self-scoped-resource convention. Sending a message
+  creates a `Notification` for the other participant and bumps
+  `Conversation.updatedAt`.
+- **Bug caught by testing, fixed before commit:** an empty
+  `prisma.conversation.update({ data: {} })` does *not* touch an
+  `@updatedAt` field on its own in this Prisma version — confirmed with
+  a standalone repro before assuming it was a client bug. Sending a
+  message now explicitly sets `updatedAt: new Date()`, otherwise
+  `listConversations`' "most recently active first" sort silently never
+  moved a thread to the top after the first message.
+
+**`NotificationsModule` (`/notifications/*`):** `GET /notifications`
+(paginated, optional `?unreadOnly=true`), `GET
+/notifications/unread-count`, `POST /notifications/:id/read` (404s on
+someone else's notification), `POST /notifications/read-all`.
+`NotificationsService` is exported so other modules can inject it and
+create notifications directly — the only way a `Notification` row comes
+into existence; there's no endpoint for creating one on someone else's
+behalf.
+
+**Notification emission wired into every real lifecycle event that
+already existed:** `MeasurementVisitsService` (claim → customer
+notified, complete → customer notified), `RentalsService` (booking
+created → shop owner notified, return confirmed → renter notified, with
+the late-fee amount in the message when there is one), `AdminService`
+(business application approve/reject → applicant notified with
+`reviewNotes` folded into the rejection message; suspend/reactivate →
+notified for `User`, `TailorProfile`, and `RentalShopProfile` all three,
+sharing one `notifyBusinessStatusChange` helper for the latter two).
+
+**Verified against the live backend** (local Postgres, real HTTP calls,
+real signed JWTs for eight throwaway accounts — customer ×2, tailor,
+rental-shop owner, two applicants, admin — created directly via Prisma,
+matching every prior phase's approach since there's still no signup
+endpoint for a pre-existing account to promote):
+- Messaging: self-message rejected (`400`); starting a conversation from
+  either direction returns the same conversation id (canonicalization
+  confirmed); empty-body send rejected (`400`); sent messages show up in
+  the recipient's `unreadCount` and `lastMessage`; a non-participant gets
+  `404` on `GET .../messages`; marking read zeroes `unreadCount` and sets
+  each `Message.readAt`; `Conversation.updatedAt` now correctly moves the
+  thread to the top of `listConversations` after the fix above.
+- Notifications: sending a message produces a `type: "message"`
+  notification for the recipient; `unread-count`, mark-one-read (404s on
+  someone else's), mark-all-read, and the `?unreadOnly=true` filter all
+  behaved correctly.
+- Lifecycle wiring: claiming/completing a measurement visit produced
+  `visit_assigned`/`visit_completed` notifications for the customer;
+  booking an item produced `booking_created` for the shop owner;
+  returning a booking on time vs. an overdue one (seeded with a past
+  `returnDate`, real `$120` late fee computed the same way Phase 7's math
+  already worked) produced the two different `booking_returned` message
+  variants; approving/rejecting a business application produced
+  `application_approved`/`application_rejected` (rejection notification
+  includes the admin's `reviewNotes` text) — and a stale `CUSTOMER`-role
+  JWT reused after approval was unaffected, since notification creation
+  doesn't touch the JWT/role-check path at all; suspend/reactivate on a
+  `User`, a `TailorProfile`, and a `RentalShopProfile` each produced the
+  matching pair of notifications, and a suspended user's own JWT
+  correctly still gets rejected `401` before it could ever see the
+  "you've been suspended" notification telling it so (same
+  `JwtStrategy`-checks-the-database behavior Phase 6 built, unaffected by
+  this phase).
+- All eight test accounts plus their conversations/messages/notifications/
+  visit-requests/bookings/rental-items/business-applications deleted
+  afterward via the same Prisma connection; confirmed zero rows remain
+  matching the test-account email pattern. **Also found and cleaned up
+  in the process:** two leftover accounts from Phase 8's own
+  verification round (`phase8-e2e-customer@ditto.test`,
+  `phase8-e2e-tailor@ditto.test`, one with an explicit "please
+  disregard" note) that Phase 8's entry above claimed were deleted but
+  weren't — confirmed disposable from their email domain/notes before
+  removing, not assumed.
+
+**Mobile UI — both apps, no mock data:** new `models/chat_message.dart`,
+`conversation_summary.dart`, `app_notification.dart` (hand-duplicated
+between the two apps, same convention as every other model). `ApiClient`
+gained `startConversation`, `listConversations`, `listMessages`,
+`sendMessage`, `markConversationRead`, `listNotifications`,
+`unreadNotificationCount`, `markNotificationRead`,
+`markAllNotificationsRead` in both apps.
+
+New `features/messages/` (`MessagesListScreen`, `ChatScreen` — bubble
+layout, mark-read on open, newest-at-bottom via `ListView.builder(reverse:
+true)` over the newest-first API response) and `features/notifications/`
+(`NotificationsScreen`, mark-one/mark-all-read) in both apps.
+
+Entry points are real, not placeholders — each one uses a `userId`
+that's actually available from an existing real endpoint, never
+invented:
+- `customer_app`: the Home screen's notification bell (previously an
+  empty `onPressed: () {}`) now opens `NotificationsScreen`; a new
+  "Messages" row in the Profile menu opens `MessagesListScreen`; a
+  "Message" button on `RentalShopDetailScreen` starts a conversation with
+  the shop owner (`RentalShop.userId`, added to the model — already
+  present on the raw `GET /rental-shops` response as a Prisma scalar,
+  just not previously parsed).
+- `tailor_app`: both `DashboardScreen` (tailor side) and
+  `RentalShopDashboardScreen` (rental-shop side) gained bell/chat
+  `AppBar` actions. `RentalShopBookingsScreen` gained a "Message renter"
+  button per booking (`RentalBooking.renterId`, added to the model, same
+  always-present-scalar situation). `MeasurementRequestsScreen` gained a
+  "Message customer" button on assigned/history rows only, not the open
+  "Available to claim" pool — messaging a customer before actually
+  claiming their request isn't this tailor's place yet
+  (`MeasurementVisitRequest.customerId`, added the same way).
+- Deliberately **not** wired: a "Message tailor" entry point from
+  `TailorProfileScreen` — that screen still renders entirely from mock
+  data (no `GET /tailors/:id` endpoint exists yet, a pre-existing Phase
+  5+ gap this phase didn't create and isn't in scope to fix), so there's
+  no real tailor `userId` to message yet. Wiring a button there today
+  would mean fabricating an id — deferred until that endpoint exists.
+
+**Verified:** `flutter analyze` — zero issues in both apps after
+`flutter pub get` (ran clean in both). The `userId`/`renterId`/
+`customerId` fields this phase newly started parsing weren't assumed
+present — each was re-confirmed against a fresh real HTTP response
+during backend verification above before being added to the Dart
+models. **Not verified here, same gap as Phase 8's mobile work:**
+neither app's new screens were driven through an actual Chrome session
+this round; the Dart request/response shapes were checked directly
+against real JSON instead.
+
+**Not built this phase:**
+- No push notifications (APNs/FCM) — `Notification` rows are pulled via
+  `GET /notifications`, not pushed to a device; that needs its own
+  credential/setup pass, not scoped here.
+- No attachment upload — `Message.attachmentUrl`/`attachmentType` exist
+  on the schema and DTO (validated, `@IsIn(['image','voice','video'])`)
+  but no screen sets them yet, same shape of gap
+  `RentalItem.imageUrl`/`PortfolioItem` already have (Phase 11's
+  `AWS_S3_BUCKET`/`CLOUDINARY_URL`).
+- No "message tailor" entry point yet (see above) — blocked on a real
+  `GET /tailors/:id`, not on anything this phase owns.
 

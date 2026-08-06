@@ -6,6 +6,7 @@ import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../models/measurement_visit_request.dart';
 import '../../models/visit_request_status.dart';
+import '../messages/chat_screen.dart';
 
 // Tailor-side dispatch: GET /measurement-visits/available (open pool, same
 // for every tailor until one claims it), GET /measurement-visits/assigned
@@ -61,6 +62,26 @@ class _MeasurementRequestsScreenState extends State<MeasurementRequestsScreen> {
     request.id,
     (accessToken) => _api.completeVisitRequest(accessToken, request.id),
   );
+
+  Future<void> _messageCustomer(MeasurementVisitRequest request) async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    try {
+      final conversationId = await _api.startConversation(accessToken, request.customerId);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: conversationId,
+            otherUserName: request.customerName ?? 'Customer',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to start conversation')));
+    }
+  }
 
   Future<void> _runAction(String id, Future<MeasurementVisitRequest> Function(String) action) async {
     final accessToken = context.read<AuthRepository>().accessToken;
@@ -130,13 +151,16 @@ class _MeasurementRequestsScreenState extends State<MeasurementRequestsScreen> {
                 busy: _busyIds.contains(r.id),
                 actionLabel: 'Mark complete',
                 onAction: () => _complete(r),
+                onMessage: () => _messageCustomer(r),
               ),
             ),
           if (history.isNotEmpty) ...[
             const SizedBox(height: 28),
             Text('History', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
-            ...history.map((r) => _RequestCard(request: r, busy: false)),
+            ...history.map(
+              (r) => _RequestCard(request: r, busy: false, onMessage: () => _messageCustomer(r)),
+            ),
           ],
         ],
       ),
@@ -145,12 +169,19 @@ class _MeasurementRequestsScreenState extends State<MeasurementRequestsScreen> {
 }
 
 class _RequestCard extends StatelessWidget {
-  const _RequestCard({required this.request, required this.busy, this.actionLabel, this.onAction});
+  const _RequestCard({
+    required this.request,
+    required this.busy,
+    this.actionLabel,
+    this.onAction,
+    this.onMessage,
+  });
 
   final MeasurementVisitRequest request;
   final bool busy;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final VoidCallback? onMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +216,12 @@ class _RequestCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: request.status.color),
                 ),
               ),
+              if (onMessage != null)
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                  onPressed: onMessage,
+                  tooltip: 'Message customer',
+                ),
             ],
           ),
           const SizedBox(height: 4),

@@ -24,6 +24,7 @@ class RentalBooking {
   const RentalBooking({
     required this.id,
     required this.itemId,
+    required this.renterId,
     required this.pickupDate,
     required this.returnDate,
     required this.status,
@@ -37,6 +38,7 @@ class RentalBooking {
     return RentalBooking(
       id: json['id'] as String,
       itemId: json['itemId'] as String,
+      renterId: json['renterId'] as String,
       pickupDate: DateTime.parse(json['pickupDate'] as String),
       returnDate: DateTime.parse(json['returnDate'] as String),
       status: RentalStatusX.fromJson(json['status'] as String),
@@ -49,6 +51,10 @@ class RentalBooking {
 
   final String id;
   final String itemId;
+  // Always present on the raw response (Prisma scalar) even though `renter`
+  // (name/email/phone) is only populated on shop-side responses — used to
+  // start a conversation with the renter.
+  final String renterId;
   final DateTime pickupDate;
   final DateTime returnDate;
   final RentalStatus status;

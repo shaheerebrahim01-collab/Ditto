@@ -6,6 +6,7 @@ import 'rental_item.dart';
 class RentalShop {
   const RentalShop({
     required this.id,
+    required this.userId,
     required this.businessName,
     required this.status,
     required this.ratingAvg,
@@ -17,6 +18,7 @@ class RentalShop {
   factory RentalShop.fromJson(Map<String, dynamic> json) {
     return RentalShop(
       id: json['id'] as String,
+      userId: json['userId'] as String,
       businessName: json['businessName'] as String,
       status: json['status'] as String,
       ratingAvg: (json['ratingAvg'] as num).toDouble(),
@@ -29,6 +31,10 @@ class RentalShop {
   }
 
   final String id;
+  // The shop owner's User.id — always present on the raw API response
+  // (Prisma includes all scalars), used to start a conversation with the
+  // shop from RentalShopDetailScreen.
+  final String userId;
   final String businessName;
   final String status;
   final double ratingAvg;

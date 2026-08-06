@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { VisitRequestStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ClaimMeasurementVisitRequestDto } from './dto/claim-measurement-visit-request.dto';
 import { CreateMeasurementVisitRequestDto } from './dto/create-measurement-visit-request.dto';
 
@@ -12,7 +13,10 @@ const tailorViewInclude = {
 
 @Injectable()
 export class MeasurementVisitsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(customerId: string, dto: CreateMeasurementVisitRequestDto) {
     const preferredAt = new Date(dto.preferredAt);
@@ -85,7 +89,7 @@ export class MeasurementVisitsService {
       }
     }
 
-    return this.prisma.measurementVisitRequest.update({
+    const updated = await this.prisma.measurementVisitRequest.update({
       where: { id },
       data: {
         tailorId: tailor.id,
@@ -93,6 +97,13 @@ export class MeasurementVisitsService {
         status: VisitRequestStatus.ASSIGNED,
       },
     });
+    await this.notificationsService.create(
+      request.customerId,
+      'visit_assigned',
+      'Measurement visit assigned',
+      'A tailor has been assigned to your measurement visit request.',
+    );
+    return updated;
   }
 
   async complete(tailorUserId: string, id: string) {
@@ -100,10 +111,17 @@ export class MeasurementVisitsService {
     if (request.status !== VisitRequestStatus.ASSIGNED) {
       throw new BadRequestException(`Cannot complete a request that's ${request.status.toLowerCase()}`);
     }
-    return this.prisma.measurementVisitRequest.update({
+    const updated = await this.prisma.measurementVisitRequest.update({
       where: { id },
       data: { status: VisitRequestStatus.COMPLETED },
     });
+    await this.notificationsService.create(
+      request.customerId,
+      'visit_completed',
+      'Measurement visit completed',
+      'Your measurement visit is complete — check your saved measurements.',
+    );
+    return updated;
   }
 
   private async getTailorOrThrow(userId: string) {

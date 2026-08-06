@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
+import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../models/rental_item.dart';
 import '../../models/rental_shop.dart';
+import '../messages/chat_screen.dart';
 import 'book_item_screen.dart';
 
 // A rental shop's public detail: name, rating, and its bookable items.
@@ -39,6 +42,23 @@ class _RentalShopDetailScreenState extends State<RentalShopDetailScreen> {
     }
   }
 
+  Future<void> _messageShop(RentalShop shop) async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    try {
+      final conversationId = await _api.startConversation(accessToken, shop.userId);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(conversationId: conversationId, otherUserName: shop.businessName),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to start conversation')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -65,7 +85,19 @@ class _RentalShopDetailScreenState extends State<RentalShopDetailScreen> {
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                Text(shop.businessName, style: Theme.of(context).textTheme.headlineSmall),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(shop.businessName, style: Theme.of(context).textTheme.headlineSmall),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _messageShop(shop),
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                      label: const Text('Message'),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [

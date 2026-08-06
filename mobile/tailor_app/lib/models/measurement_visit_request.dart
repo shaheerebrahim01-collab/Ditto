@@ -8,6 +8,7 @@ import 'visit_request_status.dart';
 class MeasurementVisitRequest {
   const MeasurementVisitRequest({
     required this.id,
+    required this.customerId,
     required this.location,
     required this.preferredAt,
     required this.status,
@@ -20,6 +21,7 @@ class MeasurementVisitRequest {
     final customer = json['customer'] as Map<String, dynamic>?;
     return MeasurementVisitRequest(
       id: json['id'] as String,
+      customerId: json['customerId'] as String,
       location: json['location'] as String,
       preferredAt: DateTime.parse(json['preferredAt'] as String),
       status: VisitRequestStatusX.fromJson(json['status'] as String),
@@ -30,6 +32,9 @@ class MeasurementVisitRequest {
   }
 
   final String id;
+  // Always present on the raw response (Prisma scalar) — used to start a
+  // conversation with the customer.
+  final String customerId;
   final String location;
   final DateTime preferredAt;
   final VisitRequestStatus status;
