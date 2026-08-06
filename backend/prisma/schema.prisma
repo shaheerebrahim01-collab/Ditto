@@ -159,6 +159,9 @@ model TailorProfile {
   status           BusinessStatus @default(PENDING)
   ratingAvg        Float          @default(0)
   ratingCount      Int            @default(0)
+  // Stripe Connect account this tailor gets paid out through — null until
+  // they complete onboarding via POST /payments/connect/onboarding-link.
+  stripeAccountId  String?        @unique
 
   portfolio     PortfolioItem[]
   orders        CustomOrder[]             @relation("TailorOrders")
@@ -184,13 +187,15 @@ model TailorAssistant {
 }
 
 model RentalShopProfile {
-  id           String         @id @default(cuid())
-  userId       String         @unique
-  user         User           @relation(fields: [userId], references: [id])
-  businessName String
-  status       BusinessStatus @default(PENDING)
-  ratingAvg    Float          @default(0)
-  ratingCount  Int            @default(0)
+  id              String         @id @default(cuid())
+  userId          String         @unique
+  user            User           @relation(fields: [userId], references: [id])
+  businessName    String
+  status          BusinessStatus @default(PENDING)
+  ratingAvg       Float          @default(0)
+  ratingCount     Int            @default(0)
+  // Same Connect-payout purpose as TailorProfile.stripeAccountId.
+  stripeAccountId String?        @unique
 
   items RentalItem[]
 }
@@ -219,6 +224,8 @@ model RentalBooking {
   status     RentalStatus @default(RESERVED)
   lateFee    Float        @default(0)
   createdAt  DateTime     @default(now())
+
+  payment Payment?
 }
 
 model PortfolioItem {
@@ -253,16 +260,23 @@ model CustomOrder {
   payment Payment?
 }
 
+// Exactly one of orderId/rentalBookingId is set — a Payment is either for a
+// custom order or a rental deposit, never both. Enforced in
+// PaymentsService, not the schema (Prisma has no native CHECK constraint
+// support), same application-level-validation approach used elsewhere in
+// this codebase (e.g. AdminService's "at least one of email/phone").
 model Payment {
-  id          String      @id @default(cuid())
-  orderId     String      @unique
-  order       CustomOrder @relation(fields: [orderId], references: [id])
-  amount      Float
-  currency    String      @default("USD")
-  provider    String // stripe | apple_pay | google_pay | wallet
-  providerRef String?
-  status      String // pending | succeeded | failed | refunded
-  createdAt   DateTime    @default(now())
+  id              String         @id @default(cuid())
+  orderId         String?        @unique
+  order           CustomOrder?   @relation(fields: [orderId], references: [id])
+  rentalBookingId String?        @unique
+  rentalBooking   RentalBooking? @relation(fields: [rentalBookingId], references: [id])
+  amount          Float
+  currency        String         @default("USD")
+  provider        String // stripe | apple_pay | google_pay | wallet
+  providerRef     String?
+  status          String // pending | succeeded | failed | refunded
+  createdAt       DateTime       @default(now())
 }
 
 model Review {

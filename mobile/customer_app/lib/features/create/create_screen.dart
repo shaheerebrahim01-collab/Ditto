@@ -1,11 +1,22 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/api_client.dart';
+import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../data/garment_builder_options.dart';
+import '../../models/custom_order.dart';
+import '../../models/measurement.dart';
+import '../../models/tailor.dart';
 
-// 5-step garment builder: garment -> fabric -> details -> measurements ->
-// review (with a live running price total). Doesn't submit anywhere yet —
-// POST /orders doesn't exist (Phase 7+, see docs/ROADMAP.md).
+// 6-step garment builder: tailor -> garment -> fabric -> details ->
+// measurement -> review. POST /orders is real (price is computed
+// server-side, never trusted from here); payment is attempted right after
+// via POST /payments/orders/:id/intent, which cleanly 503s until
+// STRIPE_SECRET_KEY exists (see docs/ROADMAP.md Phase 10) — the order
+// itself is still placed for real either way.
 class CreateScreen extends StatefulWidget {
   const CreateScreen({super.key});
 
@@ -14,31 +25,23 @@ class CreateScreen extends StatefulWidget {
 }
 
 class _CreateScreenState extends State<CreateScreen> {
+  final _api = ApiClient();
   int _currentStep = 0;
 
+  Tailor? _tailor;
   String? _garmentId;
   String? _fabricId;
   String _lapelStyle = lapelStyles.keys.first;
   String _buttonStyle = buttonStyles.keys.first;
   bool _monogramEnabled = false;
   final _monogramController = TextEditingController();
+  Measurement? _selectedMeasurement;
 
-  final _measurementControllers = {
-    'Chest': TextEditingController(),
-    'Waist': TextEditingController(),
-    'Hip': TextEditingController(),
-    'Shoulder': TextEditingController(),
-    'Sleeve': TextEditingController(),
-    'Neck': TextEditingController(),
-    'Inseam': TextEditingController(),
-  };
+  bool _placingOrder = false;
 
   @override
   void dispose() {
     _monogramController.dispose();
-    for (final controller in _measurementControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -57,8 +60,10 @@ class _CreateScreenState extends State<CreateScreen> {
   bool get _canContinue {
     switch (_currentStep) {
       case 0:
-        return _garmentId != null;
+        return _tailor != null;
       case 1:
+        return _garmentId != null;
+      case 2:
         return _fabricId != null;
       default:
         return true;
@@ -75,7 +80,7 @@ class _CreateScreenState extends State<CreateScreen> {
         onStepTapped: (index) => setState(() => _currentStep = index),
         onStepContinue: _canContinue
             ? () => setState(() {
-                if (_currentStep < 4) _currentStep++;
+                if (_currentStep < 5) _currentStep++;
               })
             : null,
         onStepCancel: _currentStep > 0 ? () => setState(() => _currentStep--) : null,
@@ -84,10 +89,13 @@ class _CreateScreenState extends State<CreateScreen> {
             padding: const EdgeInsets.only(top: 20),
             child: Row(
               children: [
-                if (_currentStep < 4)
+                if (_currentStep < 5)
                   ElevatedButton(onPressed: details.onStepContinue, child: const Text('Next'))
                 else
-                  ElevatedButton(onPressed: _placeOrder, child: const Text('Place Order')),
+                  ElevatedButton(
+                    onPressed: _placingOrder ? null : _placeOrder,
+                    child: Text(_placingOrder ? 'Placing order...' : 'Place Order'),
+                  ),
                 if (details.onStepCancel != null) ...[
                   const SizedBox(width: 12),
                   OutlinedButton(onPressed: details.onStepCancel, child: const Text('Back')),
@@ -98,21 +106,27 @@ class _CreateScreenState extends State<CreateScreen> {
         },
         steps: [
           Step(
-            title: const Text('Garment'),
+            title: const Text('Tailor'),
             isActive: _currentStep >= 0,
+            state: _tailor != null ? StepState.complete : StepState.indexed,
+            content: _TailorStep(selected: _tailor, onSelect: (t) => setState(() => _tailor = t)),
+          ),
+          Step(
+            title: const Text('Garment'),
+            isActive: _currentStep >= 1,
             state: _garmentId != null ? StepState.complete : StepState.indexed,
             content: _GarmentStep(selectedId: _garmentId, onSelect: (id) => setState(() => _garmentId = id)),
           ),
           Step(
             title: const Text('Fabric'),
-            isActive: _currentStep >= 1,
+            isActive: _currentStep >= 2,
             state: _fabricId != null ? StepState.complete : StepState.indexed,
             content: _FabricStep(selectedId: _fabricId, onSelect: (id) => setState(() => _fabricId = id)),
           ),
           Step(
             title: const Text('Details'),
-            isActive: _currentStep >= 2,
-            state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+            isActive: _currentStep >= 3,
+            state: _currentStep > 3 ? StepState.complete : StepState.indexed,
             content: _DetailsStep(
               lapelStyle: _lapelStyle,
               buttonStyle: _buttonStyle,
@@ -124,21 +138,25 @@ class _CreateScreenState extends State<CreateScreen> {
             ),
           ),
           Step(
-            title: const Text('Measurements'),
-            isActive: _currentStep >= 3,
-            state: _currentStep > 3 ? StepState.complete : StepState.indexed,
-            content: _MeasurementsStep(controllers: _measurementControllers),
+            title: const Text('Measurement'),
+            isActive: _currentStep >= 4,
+            state: _currentStep > 4 ? StepState.complete : StepState.indexed,
+            content: _MeasurementStep(
+              selected: _selectedMeasurement,
+              onSelect: (m) => setState(() => _selectedMeasurement = m),
+            ),
           ),
           Step(
             title: const Text('Review'),
-            isActive: _currentStep >= 4,
+            isActive: _currentStep >= 5,
             content: _ReviewStep(
+              tailor: _tailor,
               garment: _garment,
               fabric: _fabric,
               lapelStyle: _lapelStyle,
               buttonStyle: _buttonStyle,
               monogramText: _monogramEnabled ? _monogramController.text.trim() : '',
-              measurements: _measurementControllers,
+              measurement: _selectedMeasurement,
               basePrice: _basePrice,
               fabricPrice: _fabricPrice,
               lapelPrice: _lapelPrice,
@@ -152,9 +170,152 @@ class _CreateScreenState extends State<CreateScreen> {
     );
   }
 
-  void _placeOrder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Order flow not wired to a backend yet — nothing was submitted.')),
+  Future<void> _placeOrder() async {
+    final tailor = _tailor;
+    final garmentId = _garmentId;
+    final fabricId = _fabricId;
+    if (tailor == null || garmentId == null || fabricId == null) return;
+
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+
+    setState(() => _placingOrder = true);
+    CustomOrder order;
+    try {
+      order = await _api.createOrder(
+        accessToken,
+        tailorId: tailor.id,
+        garmentTypeId: garmentId,
+        fabricId: fabricId,
+        lapelStyle: _lapelStyle,
+        buttonStyle: _buttonStyle,
+        monogram: _monogramEnabled ? _monogramController.text.trim() : null,
+        measurementId: _selectedMeasurement?.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _placingOrder = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to place order — please try again.')),
+      );
+      return;
+    }
+
+    // Order is placed for real regardless of what happens next — payment
+    // is a separate step that cleanly 503s until Stripe is configured.
+    String paymentMessage;
+    try {
+      await _api.createOrderPaymentIntent(accessToken, order.id);
+      paymentMessage = 'Order placed! Proceed to payment.';
+    } on ApiException catch (e) {
+      paymentMessage = e.statusCode == 503
+          ? 'Order placed! Payment isn\'t set up yet — the tailor will follow up with you directly.'
+          : 'Order placed! (payment setup failed — the tailor will follow up with you directly)';
+    } catch (e) {
+      paymentMessage = 'Order placed! (payment setup failed — the tailor will follow up with you directly)';
+    }
+
+    if (!mounted) return;
+    setState(() => _placingOrder = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(paymentMessage)));
+    Navigator.of(context).pop();
+  }
+}
+
+class _TailorStep extends StatefulWidget {
+  const _TailorStep({required this.selected, required this.onSelect});
+
+  final Tailor? selected;
+  final ValueChanged<Tailor> onSelect;
+
+  @override
+  State<_TailorStep> createState() => _TailorStepState();
+}
+
+class _TailorStepState extends State<_TailorStep> {
+  final _api = ApiClient();
+  List<Tailor>? _tailors;
+  String? _error;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load([String? q]) async {
+    try {
+      final result = await _api.listTailors(q: q);
+      if (!mounted) return;
+      setState(() {
+        _tailors = result.data;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Failed to load tailors');
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _load(value.isEmpty ? null : value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          onChanged: _onSearchChanged,
+          decoration: const InputDecoration(
+            hintText: 'Search tailors...',
+            prefixIcon: Icon(Icons.search, color: DittoColors.brown),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_error != null)
+          Text(_error!, style: const TextStyle(color: DittoColors.mutedInk))
+        else if (_tailors == null)
+          const Center(child: CircularProgressIndicator())
+        else if (_tailors!.isEmpty)
+          const Text('No tailors match', style: TextStyle(color: DittoColors.mutedInk))
+        else
+          RadioGroup<String>(
+            groupValue: widget.selected?.id,
+            onChanged: (id) {
+              for (final tailor in _tailors!) {
+                if (tailor.id == id) {
+                  widget.onSelect(tailor);
+                  break;
+                }
+              }
+            },
+            child: Column(
+              children: _tailors!
+                  .map(
+                    (t) => RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      value: t.id,
+                      title: Text(t.businessName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        t.ratingCount > 0 ? '${t.ratingAvg.toStringAsFixed(1)} (${t.ratingCount})' : 'New',
+                        style: const TextStyle(color: DittoColors.mutedInk),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -345,37 +506,106 @@ class _DetailsStep extends StatelessWidget {
   }
 }
 
-class _MeasurementsStep extends StatelessWidget {
-  const _MeasurementsStep({required this.controllers});
+// Picks from the customer's real saved measurements (GET /measurements,
+// Phase 8) rather than collecting ad-hoc numbers here — CreateOrderDto's
+// measurementId points at a real saved Measurement, so this step needs to
+// choose one, not invent one.
+class _MeasurementStep extends StatefulWidget {
+  const _MeasurementStep({required this.selected, required this.onSelect});
 
-  final Map<String, TextEditingController> controllers;
+  final Measurement? selected;
+  final ValueChanged<Measurement?> onSelect;
+
+  @override
+  State<_MeasurementStep> createState() => _MeasurementStepState();
+}
+
+class _MeasurementStepState extends State<_MeasurementStep> {
+  final _api = ApiClient();
+  List<Measurement>? _measurements;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    try {
+      final measurements = await _api.listMeasurements(accessToken);
+      if (!mounted) return;
+      setState(() {
+        _measurements = measurements;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Failed to load saved measurements');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: controllers.entries.map((entry) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: TextField(
-            controller: entry.value,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(labelText: '${entry.key} (in)'),
+    if (_error != null) {
+      return Text(_error!, style: const TextStyle(color: DittoColors.mutedInk));
+    }
+    if (_measurements == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_measurements!.isEmpty) {
+      return const Text(
+        'No saved measurements yet — add one from Profile > Saved Measurements, '
+        'or skip and share measurements with your tailor directly.',
+        style: TextStyle(color: DittoColors.mutedInk),
+      );
+    }
+    return RadioGroup<String?>(
+      groupValue: widget.selected?.id,
+      onChanged: (id) {
+        if (id == null) {
+          widget.onSelect(null);
+          return;
+        }
+        for (final measurement in _measurements!) {
+          if (measurement.id == id) {
+            widget.onSelect(measurement);
+            break;
+          }
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const RadioListTile<String?>(
+            contentPadding: EdgeInsets.zero,
+            value: null,
+            title: Text('Skip for now'),
           ),
-        );
-      }).toList(),
+          ..._measurements!.map(
+            (m) => RadioListTile<String?>(
+              contentPadding: EdgeInsets.zero,
+              value: m.id,
+              title: Text(m.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _ReviewStep extends StatelessWidget {
   const _ReviewStep({
+    required this.tailor,
     required this.garment,
     required this.fabric,
     required this.lapelStyle,
     required this.buttonStyle,
     required this.monogramText,
-    required this.measurements,
+    required this.measurement,
     required this.basePrice,
     required this.fabricPrice,
     required this.lapelPrice,
@@ -384,12 +614,13 @@ class _ReviewStep extends StatelessWidget {
     required this.total,
   });
 
+  final Tailor? tailor;
   final GarmentType? garment;
   final FabricSwatch? fabric;
   final String lapelStyle;
   final String buttonStyle;
   final String monogramText;
-  final Map<String, TextEditingController> measurements;
+  final Measurement? measurement;
   final double basePrice;
   final double fabricPrice;
   final double lapelPrice;
@@ -399,22 +630,16 @@ class _ReviewStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final filledMeasurements = measurements.entries.where((e) => e.value.text.trim().isNotEmpty);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _SummaryRow(label: 'Tailor', value: tailor?.businessName ?? '—'),
         _SummaryRow(label: 'Garment', value: garment?.label ?? '—'),
         _SummaryRow(label: 'Fabric', value: fabric?.name ?? '—'),
         _SummaryRow(label: 'Lapel', value: lapelStyle),
         _SummaryRow(label: 'Buttons', value: buttonStyle),
         if (monogramText.isNotEmpty) _SummaryRow(label: 'Monogram', value: monogramText),
-        if (filledMeasurements.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text('Measurements', style: Theme.of(context).textTheme.titleSmall),
-          for (final entry in filledMeasurements)
-            _SummaryRow(label: entry.key, value: '${entry.value.text} in'),
-        ],
+        _SummaryRow(label: 'Measurement', value: measurement?.label ?? 'Not selected'),
         const Divider(height: 32),
         _PriceRow(label: 'Base (${garment?.label ?? '—'})', amount: basePrice),
         if (fabricPrice > 0) _PriceRow(label: 'Fabric upgrade', amount: fabricPrice),

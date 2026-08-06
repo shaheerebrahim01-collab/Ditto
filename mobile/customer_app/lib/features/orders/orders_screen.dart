@@ -1,27 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/api_client.dart';
+import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
-import '../../data/mock_orders.dart';
-import '../../models/order_summary.dart';
+import '../../models/custom_order.dart';
+import '../../models/order_summary.dart'; // OrderStageX (summaryColor/summaryStatus)
 import 'order_tracking_screen.dart';
 
-// Order list — renders against local mock data. GET /orders doesn't exist
-// yet (Phase 7+, see docs/ROADMAP.md).
-class OrdersScreen extends StatelessWidget {
+// GET /orders/me — the signed-in customer's own custom orders.
+class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
+
+  @override
+  State<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  final _api = ApiClient();
+  List<CustomOrder>? _orders;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    try {
+      final orders = await _api.listMyOrders(accessToken);
+      if (!mounted) return;
+      setState(() {
+        _orders = orders;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Failed to load orders');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Orders')),
-      body: mockOrders.isEmpty
-          ? const Center(child: Text('No orders yet', style: TextStyle(color: DittoColors.mutedInk)))
-          : ListView.separated(
-              padding: const EdgeInsets.all(20),
-              itemCount: mockOrders.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) => _OrderCard(order: mockOrders[index]),
-            ),
+      body: RefreshIndicator(onRefresh: _load, child: _buildBody()),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_error != null) {
+      return ListView(
+        children: [Center(child: Padding(padding: const EdgeInsets.all(40), child: Text(_error!)))],
+      );
+    }
+    if (_orders == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_orders!.isEmpty) {
+      return ListView(
+        children: const [
+          Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(child: Text('No orders yet', style: TextStyle(color: DittoColors.mutedInk))),
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: _orders!.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) => _OrderCard(order: _orders![index]),
     );
   }
 }
@@ -29,13 +82,13 @@ class OrdersScreen extends StatelessWidget {
 class _OrderCard extends StatelessWidget {
   const _OrderCard({required this.order});
 
-  final OrderSummary order;
+  final CustomOrder order;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => OrderTrackingScreen(orderId: order.id)),
+        MaterialPageRoute(builder: (_) => OrderTrackingScreen(order: order)),
       ),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -72,13 +125,13 @@ class _OrderCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text(order.tailorName, style: const TextStyle(color: DittoColors.mutedInk)),
+            Text(order.tailorBusinessName ?? 'Unknown tailor', style: const TextStyle(color: DittoColors.mutedInk)),
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Ordered ${_formatDate(order.orderedAt)}',
+                  'Ordered ${_formatDate(order.createdAt)}',
                   style: const TextStyle(fontSize: 12, color: DittoColors.mutedInk),
                 ),
                 Text(

@@ -12,7 +12,7 @@ continues this project should read this file first.
 - [ ] Phase 7 — Suit rental ops (in progress — backend, admin dashboard, and mobile UI done; no payments or ratings yet)
 - [ ] Phase 8 — AI styling & measurements (measurements + visit-request done end-to-end; styling scaffolded, blocked on `ANTHROPIC_API_KEY`)
 - [x] Phase 9 — Messaging & notifications
-- [ ] Phase 10 — Payments
+- [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [ ] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA
 - [ ] Phase 13 — Security hardening
@@ -908,4 +908,230 @@ against real JSON instead.
   `AWS_S3_BUCKET`/`CLOUDINARY_URL`).
 - No "message tailor" entry point yet (see above) — blocked on a real
   `GET /tailors/:id`, not on anything this phase owns.
+
+## Phase 10 — payments (built up to the real Stripe account, blocked there)
+
+Three new backend pieces, all built from empty skeletons: `TailorsModule`
+(a genuine prerequisite gap, not scope creep — see below), `OrdersModule`,
+and `PaymentsModule` (Stripe Connect). Built and verified everything that
+doesn't require an actual Stripe account; stopped exactly at the point
+that does, per instruction.
+
+**Why `TailorsModule` had to be built first.** `customer_app`'s Create
+flow has never had a tailor-picker step — it built a garment/fabric/
+details/measurements/review flow with no way to choose *whose* order this
+is, even though `CustomOrder.tailorId` is required in the schema. There
+was also no public `GET /tailors` endpoint for a picker to call against —
+`TailorsModule` had been an empty skeleton since Phase 1. Payments can't
+be verified without a real order to pay for, and an order can't be
+created without a real tailor to assign it to, so this had to come first.
+
+**`TailorsModule` (`/tailors/*`)** — mirrors `RentalShopsModule`'s public-
+browse shape exactly: `GET /tailors` (public, `APPROVED` only, `q` search
+on `businessName`, optional `specialty` filter on the specialties array,
+paginated), `GET /tailors/:id` (public detail + portfolio, 404s anything
+not `APPROVED`), `GET`/`PATCH /tailors/me` (self-scoped,
+`@Roles(Role.TAILOR)`).
+
+**`OrdersModule` (`/orders/*`):**
+- `POST /orders` — `{ tailorId, garmentTypeId, fabricId, lapelStyle?,
+  buttonStyle?, monogram?, measurementId? }`. **Price is computed
+  server-side, never accepted from the client** — new
+  `orders/garment-pricing.ts` mirrors
+  `mobile/customer_app/lib/data/garment_builder_options.dart`'s base
+  prices/add-ons by hand (same "kept in sync by hand" convention
+  `styling/garment-vocabulary.ts` already uses for the id lists, which
+  this file imports and validates every id against — an unrecognized
+  `garmentTypeId`/`fabricId`/`lapelStyle`/`buttonStyle` is a `400`, never
+  silently priced at 0). `measurementId`, if given, must belong to the
+  calling customer.
+- `GET /orders/me`, `GET /orders/tailor` (`@Roles(Role.TAILOR)`),
+  `GET /orders/:id` (self-scoped to either the order's own customer or
+  its assigned tailor, `404` otherwise — same non-probable-by-id shape
+  every other self-scoped resource in this API uses).
+- `PATCH /orders/:id/stage` (`@Roles(Role.TAILOR)`, owned orders only) —
+  a hand-written `STAGE_ORDER` sequence enforces forward-only movement
+  through `OrderStage`; moving sideways or backward (including
+  re-sending the current stage) is a `400`.
+
+**`PaymentsModule` (`/payments/*`) — Stripe Connect, lazy-init.** Schema
+gained `TailorProfile.stripeAccountId` / `RentalShopProfile.stripeAccountId`
+(both nullable+unique — a business hasn't onboarded until these are set)
+and `Payment` was generalized from order-only to *either* an order or a
+rental-booking deposit (`orderId`/`rentalBookingId` both now nullable,
+`RentalBooking` gained the inverse `payment` relation) — enforced as
+"exactly one of the two" in `PaymentsService`, the same
+application-level-validation approach `AdminService` already uses for
+"at least one of email/phone", since Prisma's schema language has no
+native CHECK constraint. Migration
+`20260806191415_add_payments_stripe_connect`, generated via `prisma
+migrate diff --from-url` against the live dev DB rather than `migrate
+dev` — this environment's non-interactive shell can't answer `migrate
+dev`'s "the environment is non-interactive" prompt, so the diff was
+written to a migration file by hand and applied with `migrate deploy`
+instead. Same "structurally present, blocked on a credential" shape
+Phase 8's `AnthropicClient` provider used: new `stripe-client.provider.ts`
+lazily constructs a `Stripe` client from `STRIPE_SECRET_KEY` the first
+time it's actually needed; `isStripeConfigured()`/`isWebhookConfigured()`
+are checked before ever touching the SDK.
+
+- `POST /payments/orders/:orderId/intent`, `POST
+  /payments/rentals/:bookingId/deposit-intent` — creates a Stripe
+  `PaymentIntent` as a **destination charge** (`transfer_data.destination`
+  = the tailor's/shop's `stripeAccountId`, `application_fee_amount` =
+  Ditto's cut), upserts a `Payment` row (`status: "pending"`,
+  `providerRef` = the intent id), returns `clientSecret`. `503`s if the
+  business hasn't finished Connect onboarding yet (`stripeAccountId` still
+  null) or if Stripe isn't configured at all.
+- `POST /payments/connect/onboarding-link` (`@Roles(Role.TAILOR,
+  Role.RENTAL_SHOP)` — either role, `RolesGuard`'s `includes` check makes
+  this an "either" gate rather than "both") — creates (once, reused after)
+  a Stripe Express connected account for the caller's own business
+  profile, then a fresh onboarding `AccountLink` (these are single-use,
+  so never cached).
+- `POST /payments/webhook` — **no `JwtAuthGuard`** (Stripe calls this with
+  its own signature, not a user's token); verifies
+  `stripe-signature` against `STRIPE_WEBHOOK_SECRET` via
+  `stripe.webhooks.constructEvent`, updates the matching `Payment.status`
+  on `payment_intent.succeeded`/`payment_intent.payment_failed`. Needs the
+  *exact* raw request bytes to verify that signature — `main.ts` now
+  passes `{ rawBody: true }` to `NestFactory.create`, and this is the only
+  route that reads `req.rawBody` instead of the parsed body. A request
+  missing either the raw body or the header is a clean `400`, never a
+  crash.
+- The platform fee is a placeholder `PLATFORM_FEE_RATE = 0.1` (10%)
+  constant — a real number needs a real business decision that hasn't
+  been made yet; kept as one named, easy-to-find constant rather than
+  guessed and buried.
+
+**Verified against the live backend** (local Postgres, real HTTP calls,
+real signed JWTs): `GET /tailors` search + specialty filter, `GET
+/tailors/:id` 404ing a `PENDING` tailor; `POST /orders` — sent a
+deliberately wrong `garmentTypeId` (rejected `400`, listing the valid
+values) and a deliberately wrong client-sent `price` field (silently
+dropped — `CreateOrderDto` doesn't have a `price` field at all, so
+`ValidationPipe`'s `whitelist: true` strips it before it ever reaches the
+service), then a real order (suit + burgundy_silk + Peak lapel +
+Double-Breasted buttons + monogram) and confirmed the server-computed
+price (`355`) matched hand-calculated arithmetic exactly; confirmed both
+the customer and the assigned tailor can see it via `GET /orders/:id`,
+and a totally unrelated third user gets `404`; walked the stage machine
+forward (`ORDER_CONFIRMED` → `CUTTING`), confirmed a same-stage re-send
+and a backward move are both `400`, and confirmed a `CUSTOMER` gets `403`
+on the tailor-only stage-update route. Every `/payments/*` route was
+exercised with real signed JWTs against this environment's real absence
+of `STRIPE_SECRET_KEY`: order-intent, deposit-intent, and
+onboarding-link all returned a clean `503` with the exact missing-env-var
+message (not a raw SDK crash); a non-tailor/non-shop role got `403` on
+onboarding-link *before* ever reaching Stripe; the webhook route
+correctly told apart "no signature header at all" (`400`) from "signature
+header present but webhook secret unconfigured" (`503`) — proving
+`rawBody: true` is actually wired, not just present in the option object.
+All seeded rows (users, tailor/rental-shop profiles, an order, a rental
+booking, a measurement) deleted afterward via the same Prisma connection;
+also found and removed two more stale leftover accounts from an earlier
+Phase 8 verification session that a prior ROADMAP entry had claimed were
+cleaned up but weren't. `npx tsc --noEmit` and the existing `jest` suite
+(2/2) both clean.
+
+**A real environment obstacle, not a code problem, worth recording:**
+this session's `nest start --watch` / `nest build` both got repeatedly
+killed by this environment mid-compile once the `stripe` package (a large
+dependency — hundreds of generated resource type files) was added,
+regardless of retry strategy. Root-caused in two parts: (1) an
+unconditional `taskkill //IM node.exe //F` this session had been
+prepending "just in case" before some retries was killing its *own*
+in-progress build, not a stale one — stopped doing that; (2) even
+without that, backgrounded compiles here appear to have a hard wall-clock
+limit shorter than a cold `stripe`-inclusive compile needs. Fixed by
+relying on `tsconfig.json`'s already-enabled `incremental: true`: a first
+`npx tsc` run gets killed partway through but leaves a valid
+`.tsbuildinfo` cache and partial `dist/`; a second `npx tsc` immediately
+after resumes from that cache and finishes fast. `node dist/main.js`
+directly (bypassing `nest start`'s webpack watch layer entirely) then
+boots reliably. Recorded here since it'll recur the next time a
+similarly large dependency is added.
+
+**Mobile — real order creation, no mock data left where this phase
+touched it:**
+
+`customer_app`: new `models/tailor.dart` (real `GET /tailors` shape,
+distinct from the still-mock `TailorSummary` Home/Explore use) and
+`models/custom_order.dart`. `CreateScreen` gained a real tailor-picker as
+its new first step (search + `RadioGroup` list against `GET /tailors`)
+and a real measurement-picker step — replacing the old ad-hoc
+measurement-value text fields, which never persisted anywhere and
+couldn't back a real `measurementId`, with a picker over the customer's
+actual saved measurements (`GET /measurements`, Phase 8) plus a "Skip"
+option. "Place Order" now really calls `POST /orders`, then attempts
+`POST /payments/orders/:id/intent` — the order is placed for real either
+way; if payment comes back `503` (it does, today), the customer sees "Order
+placed! Payment isn't set up yet — the tailor will follow up with you
+directly" rather than a fake success or a raw error. `OrdersScreen` and
+`OrderTrackingScreen` now render `GET /orders/me` for real (the
+`OrderStage` enum already matched the backend exactly from earlier mock
+work, just needed a `fromJson`); `mock_orders.dart` and the now-unused
+`OrderSummary` class deleted rather than left stale.
+
+`tailor_app`: `TailorOrdersScreen` now renders `GET /orders/tailor` for
+real, with a "Move to `<next stage>`" button calling `PATCH
+/orders/:id/stage`. The old "Incoming Requests" accept/decline section is
+gone, not just unwired — `CustomOrder` only ever starts at
+`ORDER_CONFIRMED` (same self-service-booking shape `RentalsService`
+already uses for bookings; this phase didn't add a pending-approval
+concept), so there was never anything real for it to represent;
+`models/incoming_request.dart` deleted along with it. Added a real
+"Message customer" button per order (`TailorOrder.customerId`, always
+present on the raw response as a Prisma scalar even though the nested
+`customer` include is name/phone-only) — the first real order-to-message
+bridge, and incidentally the first "message a tailor's customer" path
+this project has had.
+
+**Verified:** `flutter analyze` — zero issues in both apps after `flutter
+pub get` (ran clean in both). One real fix caught by analyze, not
+guessed: `RadioListTile`'s `groupValue`/`onChanged` params are deprecated
+as of the Flutter version this project is on (superseded by a
+`RadioGroup` ancestor widget) — migrated both new picker steps in
+`CreateScreen` to `RadioGroup` rather than leaving deprecation warnings
+in a codebase that's held a "zero issues" bar every prior phase. **Not
+verified here, same gap as Phases 8/9's mobile work:** no screens were
+driven through an actual Chrome session this round; the
+`userId`/`customerId` fields this phase started parsing (`Tailor` has no
+such need, but `TailorOrder.customerId` does) were re-confirmed against
+real HTTP responses during backend verification before being trusted in
+a Dart model, not assumed.
+
+**The real stopping point.** Everything above works end-to-end except
+the parts that need Stripe itself: no `STRIPE_SECRET_KEY` exists in this
+environment, so no `PaymentIntent`, `Account`, or `AccountLink` has ever
+actually been created against Stripe's real API — every Stripe-touching
+code path in this phase has only ever been exercised via its
+clean-`503`-without-a-key fallback, the same category of "written
+correctly, unverified against the real provider" Phase 8's styling module
+started in. **What's specifically needed next, and why it's Connect and
+not a plain Stripe account:** Ditto charges customers *and* pays out to
+tailors and rental shops — that's Stripe Connect (destination charges +
+connected accounts), not a vanilla merchant account. Concretely:
+1. A Stripe account with Connect enabled, in test mode to start.
+2. `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (from a webhook
+   endpoint registered against `POST /payments/webhook`, or the Stripe
+   CLI's `stripe listen --forward-to` for local testing) into `backend/.env`.
+3. A test tailor/rental-shop account walking the real Connect onboarding
+   flow (`POST /payments/connect/onboarding-link` → Stripe's hosted
+   onboarding → `stripeAccountId` populated) before any `PaymentIntent`
+   against that business can succeed — Stripe rejects a destination
+   charge to an account that hasn't completed onboarding, so this is a
+   real precondition, not just a nice-to-have.
+4. The mobile side needs Stripe's own SDK (`flutter_stripe`) plus a
+   **publishable** key for a real `PaymentSheet` — deliberately not added
+   this phase. A client-side payment SDK integration is the one piece in
+   this whole project that genuinely cannot be written-then-verified
+   later the way the backend pieces were: without a publishable key there
+   is nothing to initialize it against, and guessing at `PaymentSheet`
+   wiring with zero ability to run it would be exactly the kind of
+   fake-until-proven-otherwise complexity this project has avoided at
+   every previous credential wall (Firebase, Anthropic). `ApiClient`
+   already exposes `createOrderPaymentIntent` returning the raw
+   `clientSecret`, so wiring the actual `PaymentSheet` is additive once
+   the publishable key exists — not a redesign.
 

@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { OrdersController } from './orders.controller';
+import { OrdersService } from './orders.service';
 
-// OrdersModule owns everything under /orders. Empty by design at this phase —
-// see docs/ROADMAP.md for when this module's endpoints land.
-@Module({})
+@Module({
+  imports: [AuthModule], // needed so JwtAuthGuard has something to check against
+  controllers: [OrdersController],
+  providers: [OrdersService],
+})
 export class OrdersModule {}

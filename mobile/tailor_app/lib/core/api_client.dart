@@ -9,6 +9,7 @@ import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
 import '../models/rental_item.dart';
 import '../models/rental_shop.dart';
+import '../models/tailor_order.dart';
 import '../models/user.dart';
 import 'env.dart';
 
@@ -302,6 +303,26 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     _decode(response);
+  }
+
+  // GET /orders/tailor — this tailor's own custom orders.
+  Future<List<TailorOrder>> listMyTailorOrders(String accessToken) async {
+    final response = await _http.get(
+      _uri('/orders/tailor'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(response).map((e) => TailorOrder.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // PATCH /orders/:id/stage — server rejects any move that isn't strictly
+  // forward through OrderStage.
+  Future<TailorOrder> advanceOrderStage(String accessToken, String orderId, OrderStage stage) async {
+    final response = await _http.patch(
+      _uri('/orders/$orderId/stage'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({'stage': stage.value}),
+    );
+    return TailorOrder.fromJson(_decode(response));
   }
 
   Map<String, dynamic> _decode(http.Response response) {

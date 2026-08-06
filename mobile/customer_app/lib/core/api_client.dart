@@ -5,10 +5,12 @@ import 'package:http/http.dart' as http;
 import '../models/app_notification.dart';
 import '../models/chat_message.dart';
 import '../models/conversation_summary.dart';
+import '../models/custom_order.dart';
 import '../models/measurement.dart';
 import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
 import '../models/rental_shop.dart';
+import '../models/tailor.dart';
 import '../models/user.dart';
 import 'env.dart';
 
@@ -339,6 +341,76 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     _decode(response);
+  }
+
+  // GET /tailors — public browse, approved tailors only.
+  Future<({List<Tailor> data, int total, int page, int pageSize})> listTailors({
+    String? q,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final query = {
+      'page': '$page',
+      'pageSize': '$pageSize',
+      if (q != null && q.isNotEmpty) 'q': q,
+    };
+    final response = await _http.get(_uri('/tailors').replace(queryParameters: query));
+    final body = _decode(response);
+    return (
+      data: (body['data'] as List<dynamic>).map((e) => Tailor.fromJson(e as Map<String, dynamic>)).toList(),
+      total: body['total'] as int,
+      page: body['page'] as int,
+      pageSize: body['pageSize'] as int,
+    );
+  }
+
+  // POST /orders — price is computed server-side from these ids, never
+  // sent from here.
+  Future<CustomOrder> createOrder(
+    String accessToken, {
+    required String tailorId,
+    required String garmentTypeId,
+    required String fabricId,
+    String? lapelStyle,
+    String? buttonStyle,
+    String? monogram,
+    String? measurementId,
+  }) async {
+    final response = await _http.post(
+      _uri('/orders'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({
+        'tailorId': tailorId,
+        'garmentTypeId': garmentTypeId,
+        'fabricId': fabricId,
+        if (lapelStyle != null) 'lapelStyle': lapelStyle,
+        if (buttonStyle != null) 'buttonStyle': buttonStyle,
+        if (monogram != null && monogram.isNotEmpty) 'monogram': monogram,
+        if (measurementId != null) 'measurementId': measurementId,
+      }),
+    );
+    return CustomOrder.fromJson(_decode(response));
+  }
+
+  // GET /orders/me
+  Future<List<CustomOrder>> listMyOrders(String accessToken) async {
+    final response = await _http.get(
+      _uri('/orders/me'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decodeList(response).map((e) => CustomOrder.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // POST /payments/orders/:orderId/intent — throws ApiException(503) until
+  // STRIPE_SECRET_KEY (and a real Connect account for the tailor) exist;
+  // see docs/ROADMAP.md Phase 10. The order itself is already placed for
+  // real by the time this is called — this only starts the charge.
+  Future<String> createOrderPaymentIntent(String accessToken, String orderId) async {
+    final response = await _http.post(
+      _uri('/payments/orders/$orderId/intent'),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return _decode(response)['clientSecret'] as String;
   }
 
   Map<String, dynamic> _decode(http.Response response) {

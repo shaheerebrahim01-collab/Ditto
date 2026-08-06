@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 // Mirrors backend/prisma/schema.prisma's OrderStage enum exactly, in order.
-// No GET /orders endpoint exists yet (Phase 7+, see docs/ROADMAP.md), so
-// OrdersScreen renders this against local mock data for now.
 enum OrderStage {
   orderConfirmed,
   fabricSelected,
@@ -16,6 +14,19 @@ enum OrderStage {
 }
 
 extension OrderStageX on OrderStage {
+  static OrderStage fromJson(String value) => switch (value) {
+    'ORDER_CONFIRMED' => OrderStage.orderConfirmed,
+    'FABRIC_SELECTED' => OrderStage.fabricSelected,
+    'CUTTING' => OrderStage.cutting,
+    'STITCHING' => OrderStage.stitching,
+    'EMBROIDERY' => OrderStage.embroidery,
+    'QUALITY_CHECK' => OrderStage.qualityCheck,
+    'PACKED' => OrderStage.packed,
+    'OUT_FOR_DELIVERY' => OrderStage.outForDelivery,
+    'DELIVERED' => OrderStage.delivered,
+    _ => throw ArgumentError('Unknown OrderStage: $value'),
+  };
+
   String get label => switch (this) {
     OrderStage.orderConfirmed => 'Order Confirmed',
     OrderStage.fabricSelected => 'Fabric Selected',
@@ -40,24 +51,4 @@ extension OrderStageX on OrderStage {
     OrderStage.outForDelivery => const Color(0xFFC7A363),
     _ => const Color(0xFF8A6244),
   };
-}
-
-class OrderSummary {
-  const OrderSummary({
-    required this.id,
-    required this.garmentType,
-    required this.tailorName,
-    required this.stage,
-    required this.price,
-    required this.orderedAt,
-    required this.estDeliveryDate,
-  });
-
-  final String id;
-  final String garmentType;
-  final String tailorName;
-  final OrderStage stage;
-  final double price;
-  final DateTime orderedAt;
-  final DateTime estDeliveryDate;
 }

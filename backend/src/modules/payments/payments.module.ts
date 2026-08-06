@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { PaymentsController } from './payments.controller';
+import { PaymentsService } from './payments.service';
 
-// PaymentsModule owns everything under /payments. Empty by design at this phase —
-// see docs/ROADMAP.md for when this module's endpoints land.
-@Module({})
+@Module({
+  imports: [AuthModule], // needed so JwtAuthGuard has something to check against
+  controllers: [PaymentsController],
+  providers: [PaymentsService],
+})
 export class PaymentsModule {}

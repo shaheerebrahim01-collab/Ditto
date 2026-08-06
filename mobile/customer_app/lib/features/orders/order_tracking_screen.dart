@@ -1,29 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
-import '../../data/mock_orders.dart';
+import '../../models/custom_order.dart';
 import '../../models/order_summary.dart';
 
-// Full production-stage timeline for one order. Renders against local mock
-// data — GET /orders/:id doesn't exist yet (Phase 7+, see docs/ROADMAP.md).
+// Full production-stage timeline for one order — the CustomOrder is passed
+// in directly from OrdersScreen rather than re-fetched by id, since the
+// caller already has it.
 class OrderTrackingScreen extends StatelessWidget {
-  const OrderTrackingScreen({super.key, required this.orderId});
+  const OrderTrackingScreen({super.key, required this.order});
 
-  final String orderId;
+  final CustomOrder order;
 
   @override
   Widget build(BuildContext context) {
-    OrderSummary? order;
-    for (final candidate in mockOrders) {
-      if (candidate.id == orderId) {
-        order = candidate;
-        break;
-      }
-    }
-    if (order == null) {
-      return const Scaffold(body: Center(child: Text('Order not found')));
-    }
-
     final currentIndex = order.stage.index;
 
     return Scaffold(
@@ -41,10 +31,12 @@ class OrderTrackingScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(order.tailorName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(order.tailorBusinessName ?? 'Unknown tailor', style: const TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 Text(
-                  'Estimated delivery: ${_formatDate(order.estDeliveryDate)}',
+                  order.estDeliveryDate != null
+                      ? 'Estimated delivery: ${_formatDate(order.estDeliveryDate!)}'
+                      : 'Estimated delivery: not set yet',
                   style: const TextStyle(color: DittoColors.mutedInk, fontSize: 13),
                 ),
                 const SizedBox(height: 4),
