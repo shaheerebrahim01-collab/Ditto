@@ -1,0 +1,11 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	reverse_proxy backend:3000
+}
+
+{$ADMIN_DOMAIN} {
+	reverse_proxy admin:80
+}

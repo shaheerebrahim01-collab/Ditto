@@ -113,10 +113,20 @@ class _RentalShopBookingsScreenState extends State<RentalShopBookingsScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // RentalStatus.late is a real status now (RentalStatusCron flips it
+    // hourly once a PICKED_UP booking's returnDate passes) — it belongs
+    // with "Out for rental", not History, since the item is still out.
     final needsPickup = bookings.where((b) => b.status == RentalStatus.reserved).toList();
-    final outForRental = bookings.where((b) => b.status == RentalStatus.pickedUp).toList();
+    final outForRental = bookings
+        .where((b) => b.status == RentalStatus.pickedUp || b.status == RentalStatus.late)
+        .toList();
     final history = bookings
-        .where((b) => b.status != RentalStatus.reserved && b.status != RentalStatus.pickedUp)
+        .where(
+          (b) =>
+              b.status != RentalStatus.reserved &&
+              b.status != RentalStatus.pickedUp &&
+              b.status != RentalStatus.late,
+        )
         .toList();
 
     return RefreshIndicator(

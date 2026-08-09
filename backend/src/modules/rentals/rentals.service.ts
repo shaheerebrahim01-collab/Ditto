@@ -4,7 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateRentalBookingDto } from './dto/create-rental-booking.dto';
 
-const ACTIVE_STATUSES: RentalStatus[] = [RentalStatus.RESERVED, RentalStatus.PICKED_UP];
+const ACTIVE_STATUSES: RentalStatus[] = [RentalStatus.RESERVED, RentalStatus.PICKED_UP, RentalStatus.LATE];
+const RETURNABLE_STATUSES: RentalStatus[] = [RentalStatus.PICKED_UP, RentalStatus.LATE];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const bookingInclude = {
@@ -93,12 +94,14 @@ export class RentalsService {
       orderBy: { pickupDate: 'desc' },
       include: { item: true, renter: { select: { fullName: true, email: true, phone: true } } },
     });
-    // No scheduled job flips bookings to RentalStatus.LATE (that needs
-    // Phase 11's infra), so "overdue" is computed here instead of stored.
+    // RentalStatusCron (rental-status.cron.ts) flips PICKED_UP -> LATE
+    // hourly once returnDate passes, but `overdue` still checks the date
+    // directly too — a booking can be genuinely overdue for up to an hour
+    // before the cron catches up, and this keeps the flag accurate either way.
     const now = new Date();
     return bookings.map((b) => ({
       ...b,
-      overdue: b.status === RentalStatus.PICKED_UP && b.returnDate < now,
+      overdue: (b.status === RentalStatus.PICKED_UP || b.status === RentalStatus.LATE) && b.returnDate < now,
     }));
   }
 
@@ -115,7 +118,7 @@ export class RentalsService {
 
   async markReturned(shopUserId: string, id: string) {
     const booking = await this.getOwnedBooking(shopUserId, id);
-    if (booking.status !== RentalStatus.PICKED_UP) {
+    if (!RETURNABLE_STATUSES.includes(booking.status)) {
       throw new BadRequestException(`Cannot mark ${booking.status.toLowerCase()} as returned`);
     }
     const now = new Date();

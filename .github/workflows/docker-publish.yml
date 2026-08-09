@@ -1,0 +1,65 @@
+name: Publish Docker images
+
+# Builds and pushes to GitHub Container Registry using the automatic
+# GITHUB_TOKEN — no new secret needed, unlike every other credential
+# this project has had to stop and ask for. This is as far as CD goes
+# without a real server to deploy onto (see docs/ROADMAP.md Phase 11).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ditto-backend
+          tags: |
+            type=sha
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ditto-admin
+          tags: |
+            type=sha
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: admin
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # No real API_DOMAIN exists yet (see .env.prod.example) — set
+          # this repo's Actions "vars.VITE_API_BASE_URL" once one does,
+          # rather than baking in a guess.
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'http://localhost:3000' }}

@@ -13,7 +13,7 @@ continues this project should read this file first.
 - [ ] Phase 8 — AI styling & measurements (measurements + visit-request done end-to-end; styling scaffolded, blocked on `ANTHROPIC_API_KEY`)
 - [x] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
-- [ ] Phase 11 — Production infrastructure
+- [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
@@ -1134,4 +1134,155 @@ connected accounts), not a vanilla merchant account. Concretely:
    already exposes `createOrderPaymentIntent` returning the raw
    `clientSecret`, so wiring the actual `PaymentSheet` is additive once
    the publishable key exists — not a redesign.
+
+## Phase 11 — production infrastructure
+
+Target architecture (chosen over a cloud-native AWS/Terraform build):
+Docker Compose on a single VPS, with Caddy as the one thing exposed to
+the host — everything else (Postgres, Redis, the API, the admin static
+build) only reachable on the internal Docker network. Simpler to reason
+about, cheaper, and matches this project's size today.
+
+**Closed a gap Phase 7 explicitly deferred here.** Added
+`@nestjs/schedule` and `RentalStatusCron`
+(`backend/src/modules/rentals/rental-status.cron.ts`) — an hourly job
+that flips `PICKED_UP` bookings past their `returnDate` to
+`RentalStatus.LATE`. `LATE` existed in the schema since Phase 2 but
+nothing ever wrote it; Phase 7's `listShopBookings` computed an
+`overdue` boolean on the fly instead, with a comment noting the real fix
+"needs a scheduled job, which is Phase 11 infrastructure." `markReturned`
+now accepts `LATE` as a valid prior state alongside `PICKED_UP` (a late
+booking still needs to be returnable), and `ACTIVE_STATUSES` (used for
+the double-booking overlap check) includes `LATE` too — an unreturned-but-
+overdue item is still unavailable to book. `overdue` itself is still
+computed live rather than trusted purely from `status`, since a booking
+can be genuinely overdue for up to an hour before the cron catches up.
+tailor_app's `RentalShopBookingsScreen` "Out for rental" section now
+includes `LATE` alongside `PICKED_UP` (previously a late booking would
+have silently fallen into History, which is wrong — the item's still out).
+
+**Dockerfiles** — `backend/Dockerfile` (multi-stage: `deps` installs +
+runs `prisma generate` once, `build` runs `nest build`, slim `runtime`
+copies only what's needed) and `admin/Dockerfile` (Vite build → nginx-
+alpine static serving, `VITE_API_BASE_URL` as a build `ARG` since Vite
+bakes `VITE_*` vars in at build time, not runtime — see
+`src/lib/apiClient.ts`). `backend/docker-entrypoint.sh` runs `npx prisma
+migrate deploy` before starting the app on every container start
+(non-interactive, a no-op if nothing's pending). `admin/nginx.conf`
+handles react-router's SPA fallback (`try_files ... /index.html`).
+
+**`docker-compose.prod.yml` + `Caddyfile`** — Postgres/Redis/backend/
+admin never touch the host's network; Caddy terminates TLS (automatic
+Let's Encrypt via `{$ACME_EMAIL}`) and reverse-proxies `{$API_DOMAIN}` →
+backend, `{$ADMIN_DOMAIN}` → admin. `.env.prod.example` documents every
+variable the same way `backend/.env.example` already does.
+`.gitattributes` added (`*.sh`/`Dockerfile`/`Caddyfile` forced to LF) —
+without it, this Windows dev machine's `core.autocrlf` would checkout
+`docker-entrypoint.sh` with CRLF line endings, corrupting its `#!/bin/sh`
+shebang the moment it's copied into a Linux container.
+
+**GitHub Actions CI** (`.github/workflows/ci.yml`) — on every push/PR:
+backend (against a real `postgres:16` service container — `npm ci`,
+`prisma generate`, `prisma migrate deploy` as a real "do the migrations
+even apply cleanly" check, `tsc --noEmit`, `nest build`, `jest`), admin
+(`npm ci`, `oxlint`, `vite build`), and both Flutter apps (`flutter pub
+get`, `flutter analyze`) via a matrix job. **Image publishing**
+(`.github/workflows/docker-publish.yml`) — on push to `main`, builds and
+pushes both images to `ghcr.io` using the automatic `GITHUB_TOKEN`, no
+new secret needed (the admin image's `VITE_API_BASE_URL` build arg reads
+from a `vars.VITE_API_BASE_URL` repo variable that doesn't exist yet,
+falling back to a placeholder until a real `API_DOMAIN` does).
+
+**Verified for real, not just written:** built both images locally with
+plain `docker build`, then actually booted the full 5-container stack
+(`docker compose -f docker-compose.prod.yml up`) end-to-end — postgres
+and redis healthy, backend and admin passing their own `HEALTHCHECK`,
+migrations applying cleanly to a fresh database (confirmed all 17 tables
+exist via `psql \dt`), and both `curl -k --resolve
+api.localhost:443:127.0.0.1 https://api.localhost/health` and the
+equivalent for `admin.localhost` succeeding through Caddy's real reverse
+proxy over HTTPS (self-signed via Caddy's internal CA, since there's no
+real public domain yet — see the credential wall below). Not a
+config-file review; an actually-running stack.
+
+**Three real bugs found and fixed by that verification, not guessed:**
+1. **Prisma's Alpine/OpenSSL detection is broken, silently.** Even with
+   `openssl` installed in both build stages, the backend crashed on every
+   query with `Could not parse schema engine response` — Prisma's
+   runtime engine-selection logic still defaulted to the wrong binary
+   (`openssl-1.1.x`) despite the container actually running OpenSSL 3.5.7
+   (confirmed directly: `docker run node:20-alpine ... openssl version`).
+   Fixed by explicitly pinning `generator client { binaryTargets =
+   ["native", "linux-musl-openssl-3.0.x"] }` in `schema.prisma` — `native`
+   keeps local dev working on the host OS, the explicit target sidesteps
+   Alpine's detection bug entirely rather than hoping detection improves.
+2. **`localhost` ≠ `127.0.0.1` inside a container.** The admin image's
+   `HEALTHCHECK` (`wget http://localhost/`) failed with "connection
+   refused" even though nginx was serving the real build correctly the
+   entire time (confirmed with `docker exec ... wget http://127.0.0.1/`,
+   which worked) — nginx only binds IPv4 by default in this image, but
+   `localhost` resolves to `::1` first inside the container. Fixed by
+   using `127.0.0.1` explicitly in the healthcheck.
+3. **`chown -R` over a populated `node_modules` never finished** on this
+   machine's Docker Desktop/WSL2 filesystem — 30+ minutes with zero
+   progress on a step that should take seconds, confirmed genuinely hung
+   (not just slow) via two consecutive 15-minute waits with no log
+   movement. Root cause: a single recursive chown pass over hundreds of
+   installed packages is pathologically expensive on this filesystem.
+   Fixed by removing the separate `RUN chown -R` entirely — every `COPY`
+   into the runtime stage now sets ownership inline via `--chown=`, and
+   `npm ci --omit=dev` runs as the non-root user directly (with
+   `npm_config_cache` redirected to `/tmp`, since root's default cache
+   dir isn't writable by that user). No step touches every file in
+   `node_modules` in one pass anymore.
+
+**A fourth issue, procedural rather than a code bug, worth recording
+since it wasted real time:** `docker-compose.prod.yml`'s `backend`
+service has no explicit `image:` key, so `docker compose` auto-manages
+its own image (tagged `ditto-backend:latest`) completely separate from
+whatever a plain `docker build -t ditto-backend:test .` produces.
+Several rounds of "the fix isn't working" were actually testing the
+right Dockerfile against the wrong image — `docker compose up` never
+rebuilds automatically, and reuses its own stale image until told
+`docker compose build` (or `up --build`) explicitly. Once every fix was
+verified against the compose-managed image specifically, everything
+worked on the first real try.
+
+**A real environment obstacle, distinct from the above and outside this
+project's control:** this session's actual wall-clock Docker build times
+were wildly inconsistent — some steps that normally take seconds
+(`chown` on an empty directory, `npm ci`) were logged by BuildKit as
+taking 45 seconds to over 7 hours for what should be identical work,
+and this session's own tool-call timestamps show the same real-world gaps.
+The most likely explanation is that the underlying sandbox was suspended
+for extended real-world periods between actions, and BuildKit's per-step
+timers count wall-clock time including that suspension, not active CPU
+time. The practical effect: background build tasks kept reporting
+"killed," which for a long time looked like the build itself hanging.
+It wasn't — Docker Desktop's build backend (`com.docker.build.exe`)
+persists server-side independent of the CLI process that started it, so
+retrying the same `docker build` command repeatedly, letting BuildKit's
+layer cache accumulate across attempts, eventually got every image
+across the finish line. Noted here in case it recurs.
+
+**The real stopping point.** Everything above is genuinely running and
+verified locally. What's left needs a real VPS and a real domain, per
+instruction:
+1. Provision a VPS (any provider — DigitalOcean, Hetzner, Linode all
+   work identically here since nothing in this setup is provider-
+   specific), install Docker + Docker Compose on it.
+2. Point real DNS A/AAAA records for `API_DOMAIN` and `ADMIN_DOMAIN` at
+   that server's IP — Caddy's automatic HTTPS needs this live *before*
+   first boot, or its Let's Encrypt request fails.
+3. Copy `.env.prod.example` to `.env.prod` on the server, fill in real
+   secrets (a freshly generated `JWT_SECRET`, the same Firebase/
+   Anthropic/Stripe credentials from `backend/.env.example` once those
+   phases' credential walls are cleared, and the real domains from step 2).
+4. `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`
+   on the server. Nothing else changes — this is the exact same compose
+   file and images already verified above, just pointed at real infra
+   instead of `.localhost`.
+5. Once `API_DOMAIN` is live, set the GitHub Actions repo variable
+   `VITE_API_BASE_URL` to `https://<API_DOMAIN>` so
+   `docker-publish.yml`'s admin image build stops using its placeholder.
 

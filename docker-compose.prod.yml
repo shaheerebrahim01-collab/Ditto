@@ -1,0 +1,82 @@
+# Single-VPS production stack. Postgres/Redis/backend/admin are only
+# reachable on the internal docker network — Caddy is the one thing
+# exposed to the host (80/443), terminating TLS and reverse-proxying to
+# everything else. Bring up with:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# See .env.prod.example for every variable this expects.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ditto_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: ./admin
+      args:
+        VITE_API_BASE_URL: https://${API_DOMAIN}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - admin
+
+volumes:
+  ditto_pgdata:
+  caddy_data:
+  caddy_config:
