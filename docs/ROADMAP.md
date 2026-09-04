@@ -14,7 +14,9 @@ continues this project should read this file first.
 - [x] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [x] Phase 11 — Production infrastructure
-- [ ] Phase 12 — Testing & QA
+- [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
+  messaging, orders, payments, rentals against a live Postgres; one
+  domain-logic unit test; more modules to cover)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1285,4 +1287,88 @@ instruction:
 5. Once `API_DOMAIN` is live, set the GitHub Actions repo variable
    `VITE_API_BASE_URL` to `https://<API_DOMAIN>` so
    `docker-publish.yml`'s admin image build stops using its placeholder.
+
+## Phase 12 — testing & QA (in progress)
+
+`backend/test/` — a real e2e harness (`utils/test-app.ts`) that boots the
+actual `AppModule` (`Test.createTestingModule({ imports: [AppModule] })`,
+same `ValidationPipe`/`rawBody` config as `main.ts`) against the real dev
+Postgres, not a mocked Nest context. `signTestToken`/`authHeader` mirror
+`AuthService.signAccessToken`'s claims/secret exactly, so tests act as an
+arbitrary user without a real Firebase round-trip. `utils/factories.ts`
+creates/cleans up real `User`/`TailorProfile`/`RentalShopProfile` rows;
+every spec's `afterAll` calls `cleanupUsers` then `app.close()`. Wired
+into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
+`jsonwebtoken`, `supertest`, and their `@types` packages, plus a
+`test:e2e` script — right after the existing `jest` unit-test step, same
+job, same real `postgres:16` service container already there for
+`prisma migrate deploy`).
+
+**Five spec files, all run for real against Postgres:**
+- `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
+  protected and admin-only routes; a suspended user's still-valid JWT
+  stops working immediately (proves `JwtStrategy`'s fresh DB check, not
+  just reading the code); another user's self-scoped resource 404s
+  rather than 403s.
+- `orders.e2e-spec.ts`, `messaging.e2e-spec.ts`, `payments.e2e-spec.ts`,
+  `rentals.e2e-spec.ts` — real create/list/transition flows per module,
+  including the double-booking overlap rejection and the overdue→`LATE`→
+  returned-with-late-fee path added in Phase 11.
+- `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
+  Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
+  table directly: cheapest combination, every upgrade stacking, the
+  monogram fee only applying to non-blank text, and every real
+  `garmentTypeId` pricing above zero.
+
+**Verified for real:** ran the actual suite against the actual dev
+Postgres container (`docker compose up -d`, migrations already applied)
+— `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
+`npm run test:e2e` (5 suites / 26 tests) green, confirmed on this
+machine rather than assumed from CI config.
+
+**Two real bugs this verification pass found and fixed, not
+pre-existing/guessed:**
+1. **`beforeAll` timeout too short for a cold app boot.** Every e2e spec
+   calls `createTestApp()` in `beforeAll`, which compiles the entire
+   `AppModule` graph — comfortably past Jest's default 5000ms hook
+   timeout on a slow first run, failing every test in the file on a hook
+   timeout before any assertion ran (and, since `app` was then
+   `undefined`, `afterAll`'s `app.close()` threw too, leaving the process
+   hanging on open handles). Fixed with `"testTimeout": 30000` in
+   `test/jest-e2e.json` — Jest 29 applies `testTimeout` to hooks as well
+   as tests, and 30s comfortably covers a cold boot without masking a
+   real hang.
+2. **`/rentals/:id/pickup`, `/rentals/:id/return`, `/rentals/:id/cancel`
+   returned `201 Created`.** Nest defaults every `@Post()` handler to
+   201; these three all act on an *existing* booking rather than
+   creating one, so 200 is the correct status — and it's what
+   `rentals.e2e-spec.ts` (written correctly) already asserted. Fixed
+   with `@HttpCode(HttpStatus.OK)` on all three
+   (`backend/src/modules/rentals/rentals.controller.ts`). Confirmed both
+   mobile clients tolerate the change without their own fix:
+   `ApiClient._decode`/`_decodeList` in both `customer_app` and
+   `tailor_app` accept any 2xx status, they don't hardcode 201.
+
+**A real environment obstacle worth recording:** this session's dev
+machine has 4 logical cores / 8GB RAM, and this tool's background-task
+"killed" status did not always mean the underlying Windows process tree
+actually died — three consecutive `npm run test:e2e` attempts each left
+their `node`/`jest.js` processes running as orphans, so by the fourth
+attempt four full copies of the same cold `ts-jest` compile were
+competing for the same 4 cores simultaneously. Confirmed via
+`pg_stat_activity` and the Postgres container log (zero query activity,
+zero connections beyond an inspection query) that none of the four had
+even reached the point of connecting to the database — CPU-starved, not
+deadlocked. Fixed by enumerating real PIDs with `Get-CimInstance
+Win32_Process` (PowerShell) rather than trusting the tool's own
+completion status, killing the orphans, and re-running one spec file
+at a time, detached from the tool's own process lifecycle
+(`nohup ... & disown`, polled via a separate log file) so a slow but
+genuinely-progressing run isn't mistaken for a hang and killed early.
+
+**Not done yet, left for a follow-up pass:** e2e coverage for `tailors`,
+`rental-shops`, `reviews`, `measurements`/`measurement-visits`,
+`business-applications`, and `admin` still relies only on the manual
+`curl` verification recorded in their own phase entries above, not an
+automated spec file.
 

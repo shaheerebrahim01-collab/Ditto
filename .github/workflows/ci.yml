@@ -42,6 +42,8 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build
       - run: npm test
+      - name: e2e (real HTTP calls against the app above, real Postgres)
+        run: npm run test:e2e
 
   admin:
     runs-on: ubuntu-latest

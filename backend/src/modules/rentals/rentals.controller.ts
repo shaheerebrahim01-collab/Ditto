@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { RentalStatus, Role } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -24,6 +24,7 @@ export class RentalsController {
     return this.rentalsService.listMyBookings(user.userId);
   }
 
+  @HttpCode(HttpStatus.OK)
   @Post(':id/cancel')
   cancel(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.rentalsService.cancelBooking(user.userId, id);
@@ -38,6 +39,7 @@ export class RentalsController {
 
   @UseGuards(RolesGuard)
   @Roles(Role.RENTAL_SHOP)
+  @HttpCode(HttpStatus.OK)
   @Post(':id/pickup')
   pickup(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.rentalsService.markPickedUp(user.userId, id);
@@ -45,6 +47,7 @@ export class RentalsController {
 
   @UseGuards(RolesGuard)
   @Roles(Role.RENTAL_SHOP)
+  @HttpCode(HttpStatus.OK)
   @Post(':id/return')
   returnItem(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     return this.rentalsService.markReturned(user.userId, id);
