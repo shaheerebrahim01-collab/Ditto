@@ -15,8 +15,8 @@ continues this project should read this file first.
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
-  messaging, orders, payments, rentals against a live Postgres; one
-  domain-logic unit test; more modules to cover)
+  messaging, orders, payments, rentals, tailors, reviews against a live
+  Postgres; one domain-logic unit test; more modules to cover)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1304,7 +1304,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Five spec files, all run for real against Postgres:**
+**Seven spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1314,17 +1314,54 @@ job, same real `postgres:16` service container already there for
   `rentals.e2e-spec.ts` — real create/list/transition flows per module,
   including the double-booking overlap rejection and the overdue→`LATE`→
   returned-with-late-fee path added in Phase 11.
+- `tailors.e2e-spec.ts` — public list/detail only ever surface
+  `APPROVED` tailors (a `PENDING` tailor 404s by id and is absent from
+  the list even unfiltered), specialty filtering, `/tailors/me` role/auth
+  gating, a tailor updating their own profile without touching another
+  tailor's row, and `ValidationPipe`'s whitelist silently stripping
+  fields not in `UpdateTailorProfileDto` (`status`, `ratingAvg`) rather
+  than erroring or persisting them.
+- `reviews.e2e-spec.ts` — exercises the `ReviewsModule` built in this
+  pass (see below): rejects reviewing an order before it's `DELIVERED`,
+  404s a stranger reviewing someone else's order, creates a review and
+  recomputes the tailor's `ratingAvg`/`ratingCount`, rejects a second
+  review on the same order without touching the aggregate, and confirms
+  `ratingAvg` averages correctly across multiple reviews with newest-first
+  listing.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
   monogram fee only applying to non-blank text, and every real
   `garmentTypeId` pricing above zero.
 
+**`ReviewsModule` itself was built in this pass, not just tested** —
+it was still the empty by-design stub from Phase 1 (`@Module({})`).
+`reviews.controller.ts` + `reviews.service.ts` + `dto/create-review.dto.ts`:
+`POST /reviews` (JWT-guarded) lets a customer review their own order once
+it reaches `OrderStage.DELIVERED` (mirrors `OrdersService.updateStage`'s
+forward-only stage order), rejects a second review on the same order,
+and — in the same `$transaction` as the `Review` insert — recomputes the
+tailor's `TailorProfile.ratingAvg`/`ratingCount`, then fires a
+`review_received` notification via the existing `NotificationsService`.
+`GET /reviews?tailorId=` is public, paginated the same bounded way as
+every other public-browse controller (Admin, Tailors, RentalShops,
+Notifications). Not wired into either mobile app yet — `tailor_profile_screen.dart`
+and `rental_shop_detail_screen.dart` still render the "No reviews yet"
+empty state rather than calling this endpoint.
+
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (5 suites / 26 tests) green, confirmed on this
+`npm run test:e2e` (7 suites / 33 tests) green, confirmed on this
 machine rather than assumed from CI config.
+`test/utils/factories.ts`'s `cleanupUsers` now also deletes `Review` rows
+(by author or by the customer's own orders) before deleting the orders
+themselves — needed once reviews existed, otherwise a spec's `afterAll`
+would hit the same FK-constraint problem this module already guards
+against on the API side. `test/jest-e2e.json`'s `testTimeout` raised
+30000 → 60000: this dev machine's cold `AppModule` boot plus the extra
+spec files pushed some hook timings close enough to 30s to risk a flake
+on the box's 4 cores, not a hang.
 
 **Two real bugs this verification pass found and fixed, not
 pre-existing/guessed:**
@@ -1366,8 +1403,8 @@ at a time, detached from the tool's own process lifecycle
 (`nohup ... & disown`, polled via a separate log file) so a slow but
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
-**Not done yet, left for a follow-up pass:** e2e coverage for `tailors`,
-`rental-shops`, `reviews`, `measurements`/`measurement-visits`,
+**Not done yet, left for a follow-up pass:** e2e coverage for
+`rental-shops`, `measurements`/`measurement-visits`,
 `business-applications`, and `admin` still relies only on the manual
 `curl` verification recorded in their own phase entries above, not an
 automated spec file.
