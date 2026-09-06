@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ReviewsController } from './reviews.controller';
+import { ReviewsService } from './reviews.service';
 
-// ReviewsModule owns everything under /reviews. Empty by design at this phase —
-// see docs/ROADMAP.md for when this module's endpoints land.
-@Module({})
+@Module({
+  imports: [AuthModule, NotificationsModule],
+  controllers: [ReviewsController],
+  providers: [ReviewsService],
+})
 export class ReviewsModule {}

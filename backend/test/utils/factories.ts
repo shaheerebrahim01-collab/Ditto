@@ -60,7 +60,9 @@ export async function cleanupUsers(prisma: PrismaService, userIds: string[]) {
   await prisma.notification.deleteMany({ where: { userId: ids } });
 
   const orders = await prisma.customOrder.findMany({ where: { customerId: ids }, select: { id: true } });
-  await prisma.payment.deleteMany({ where: { orderId: { in: orders.map((o) => o.id) } } });
+  const orderIds = orders.map((o) => o.id);
+  await prisma.review.deleteMany({ where: { OR: [{ authorId: ids }, { orderId: { in: orderIds } }] } });
+  await prisma.payment.deleteMany({ where: { orderId: { in: orderIds } } });
   await prisma.customOrder.deleteMany({ where: { customerId: ids } });
 
   const bookings = await prisma.rentalBooking.findMany({ where: { renterId: ids }, select: { id: true } });
