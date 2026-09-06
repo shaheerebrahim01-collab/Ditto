@@ -15,9 +15,9 @@ continues this project should read this file first.
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
-  messaging, orders, payments, rentals, tailors, reviews, rental-shops
-  against a live Postgres; one domain-logic unit test; more modules to
-  cover)
+  messaging, orders, payments, rentals, tailors, reviews, rental-shops,
+  measurements, measurement-visits against a live Postgres; one
+  domain-logic unit test; more modules to cover)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1305,7 +1305,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Eight spec files, all run for real against Postgres:**
+**Ten spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1339,6 +1339,24 @@ job, same real `postgres:16` service container already there for
   `RentalShopsService.deleteItem`'s FK-constraint catch actually returns
   `409` (not a raw Prisma `P2003` 500) when a `RentalBooking` still
   references the item.
+- `measurements.e2e-spec.ts` — every route 401s unauthenticated; a
+  customer only ever lists their own measurements, not another
+  customer's; updating/deleting a measurement 404s for anyone but its
+  owner; and deleting a measurement a `CustomOrder` still references
+  correctly 409s rather than silently succeeding (see the real FK bug
+  this found, below).
+- `measurement-visits.e2e-spec.ts` — rejects a `preferredAt` in the
+  past; a customer only sees their own requests under `/me`; cancelling
+  404s for a stranger and rejects an already-cancelled request; every
+  tailor-only route (`available`/`assigned`/`claim`/`complete`) 401s/403s
+  a non-tailor; the open-claim pool only ever shows `PENDING` requests
+  and a claimed request drops out of it; claiming an already-`ASSIGNED`
+  request is rejected; claiming with an `assistantId` from a *different*
+  tailor's roster 404s (`TailorAssistant` ownership check); claiming with
+  one's own assistant persists `assistantId`; completing 404s for a
+  tailor who isn't the assigned one; and both `claim` and `complete`
+  fire the `visit_assigned`/`visit_completed` notifications they
+  document.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1363,8 +1381,8 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (8 suites / 42 tests) green, confirmed on this
-machine rather than assumed from CI config. After the run, queried
+`npm run test:e2e` (10 suites / 54 tests) green, confirmed on this
+machine rather than assumed from CI config. After each run, queried
 `User` for the `@test.dev` marker every factory user's email uses —
 zero rows, so `cleanupUsers` is actually leaving nothing behind rather
 than just not erroring.
@@ -1372,13 +1390,19 @@ than just not erroring.
 (by author or by the customer's own orders) before deleting the orders
 themselves — needed once reviews existed, otherwise a spec's `afterAll`
 would hit the same FK-constraint problem this module already guards
-against on the API side. `test/jest-e2e.json`'s `testTimeout` raised
-30000 → 60000: this dev machine's cold `AppModule` boot plus the extra
-spec files pushed some hook timings close enough to 30s to risk a flake
-on the box's 4 cores, not a hang.
+against on the API side — and, separately, now deletes `TailorAssistant`
+rows (scoped to the tailor profiles it's about to delete) before
+`tailorProfile.deleteMany`, needed once `measurement-visits.e2e-spec.ts`
+started creating assistants directly via Prisma to test claim's
+roster-ownership check (`TailorAssistant.tailorId` restricts deleting
+the `TailorProfile` it still points at). `test/jest-e2e.json`'s
+`testTimeout` raised 30000 → 60000: this dev machine's cold `AppModule`
+boot plus the extra spec files pushed some hook timings close enough to
+30s to risk a flake on the box's 4 cores, not a hang.
 
-**Two real bugs this verification pass found and fixed, not
-pre-existing/guessed:**
+**Three real bugs this verification pass found and fixed, not
+pre-existing/guessed** (#1 and #2 from the initial Phase 12 pass, #3
+from this `measurements` follow-up):
 1. **`beforeAll` timeout too short for a cold app boot.** Every e2e spec
    calls `createTestApp()` in `beforeAll`, which compiles the entire
    `AppModule` graph — comfortably past Jest's default 5000ms hook
@@ -1399,6 +1423,23 @@ pre-existing/guessed:**
    mobile clients tolerate the change without their own fix:
    `ApiClient._decode`/`_decodeList` in both `customer_app` and
    `tailor_app` accept any 2xx status, they don't hardcode 201.
+3. **`CustomOrder.measurementId`'s FK silently defeated
+   `MeasurementsService.remove`'s 409-conflict guard.** The relation is
+   optional (`measurementId String?`), and Prisma's default `onDelete`
+   for a nullable FK is `SetNull`, not `Restrict` — so the migration
+   generated from the schema let `DELETE /measurements/:id` succeed and
+   silently null out `measurementId` on any order still referencing it,
+   even though the service already has a `P2003`-catching try/catch
+   whose comment claims it mirrors `RentalItem`'s block-on-delete
+   behavior (that one *is* `Restrict`, because `RentalBooking.itemId`
+   is required — Prisma's default for a required FK already is
+   `Restrict`). The catch block was unreachable dead code.
+   `measurements.e2e-spec.ts`'s delete-conflict test caught this on its
+   first real run (`expected 409, got 200`). Fixed with an explicit
+   `onDelete: Restrict` on `CustomOrder.measurement` in `schema.prisma`
+   (migration `20260906160938_measurement_order_fk_restrict`), so the
+   application code's already-existing intent actually holds at the DB
+   level.
 
 **A real environment obstacle worth recording:** this session's dev
 machine has 4 logical cores / 8GB RAM, and this tool's background-task
@@ -1418,7 +1459,7 @@ at a time, detached from the tool's own process lifecycle
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
 **Not done yet, left for a follow-up pass:** e2e coverage for
-`measurements`/`measurement-visits`, `business-applications`, and
-`admin` still relies only on the manual `curl` verification recorded in
-their own phase entries above, not an automated spec file.
+`business-applications` and `admin` still relies only on the manual
+`curl` verification recorded in their own phase entries above, not an
+automated spec file.
 

@@ -78,6 +78,9 @@ export async function cleanupUsers(prisma: PrismaService, userIds: string[]) {
   await prisma.rentalItem.deleteMany({ where: { shopId: { in: shopIds } } });
   await prisma.rentalShopProfile.deleteMany({ where: { userId: ids } });
 
+  const tailors = await prisma.tailorProfile.findMany({ where: { userId: ids }, select: { id: true } });
+  const tailorIds = tailors.map((t) => t.id);
+  await prisma.tailorAssistant.deleteMany({ where: { tailorId: { in: tailorIds } } });
   await prisma.tailorProfile.deleteMany({ where: { userId: ids } });
   await prisma.user.deleteMany({ where: { id: ids } });
 }

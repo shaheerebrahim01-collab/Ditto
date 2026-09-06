@@ -256,7 +256,11 @@ model CustomOrder {
   fabric          String
   detailsJson     Json?
   measurementId   String?
-  measurement     Measurement?  @relation(fields: [measurementId], references: [id])
+  // Explicit Restrict — measurementId is optional so Prisma's default for a
+  // nullable FK is SetNull, which would silently defeat
+  // MeasurementsService.remove's 409-conflict guard (same block-on-delete
+  // intent as RentalItem/RentalBooking below).
+  measurement     Measurement?  @relation(fields: [measurementId], references: [id], onDelete: Restrict)
   price           Float
   stage           OrderStage    @default(ORDER_CONFIRMED)
   estDeliveryDate DateTime?
