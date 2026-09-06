@@ -15,8 +15,9 @@ continues this project should read this file first.
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
-  messaging, orders, payments, rentals, tailors, reviews against a live
-  Postgres; one domain-logic unit test; more modules to cover)
+  messaging, orders, payments, rentals, tailors, reviews, rental-shops
+  against a live Postgres; one domain-logic unit test; more modules to
+  cover)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1304,7 +1305,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Seven spec files, all run for real against Postgres:**
+**Eight spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1328,6 +1329,16 @@ job, same real `postgres:16` service container already there for
   review on the same order without touching the aggregate, and confirms
   `ratingAvg` averages correctly across multiple reviews with newest-first
   listing.
+- `rental-shops.e2e-spec.ts` — public list/detail scoped to `APPROVED`
+  shops only (a `PENDING` shop 404s by id and is absent from the list),
+  `businessName` search filtering, `/rental-shops/me` role/auth gating,
+  a shop updating its own profile without touching another shop's row,
+  the same whitelist-stripping check as `tailors.e2e-spec.ts`, full
+  `RentalItem` CRUD under `/rental-shops/me/items`, 404ing another shop's
+  attempt to update/delete an item that isn't theirs, and confirming
+  `RentalShopsService.deleteItem`'s FK-constraint catch actually returns
+  `409` (not a raw Prisma `P2003` 500) when a `RentalBooking` still
+  references the item.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1352,8 +1363,11 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (7 suites / 33 tests) green, confirmed on this
-machine rather than assumed from CI config.
+`npm run test:e2e` (8 suites / 42 tests) green, confirmed on this
+machine rather than assumed from CI config. After the run, queried
+`User` for the `@test.dev` marker every factory user's email uses —
+zero rows, so `cleanupUsers` is actually leaving nothing behind rather
+than just not erroring.
 `test/utils/factories.ts`'s `cleanupUsers` now also deletes `Review` rows
 (by author or by the customer's own orders) before deleting the orders
 themselves — needed once reviews existed, otherwise a spec's `afterAll`
@@ -1404,8 +1418,7 @@ at a time, detached from the tool's own process lifecycle
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
 **Not done yet, left for a follow-up pass:** e2e coverage for
-`rental-shops`, `measurements`/`measurement-visits`,
-`business-applications`, and `admin` still relies only on the manual
-`curl` verification recorded in their own phase entries above, not an
-automated spec file.
+`measurements`/`measurement-visits`, `business-applications`, and
+`admin` still relies only on the manual `curl` verification recorded in
+their own phase entries above, not an automated spec file.
 
