@@ -16,8 +16,9 @@ continues this project should read this file first.
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
   messaging, orders, payments, rentals, tailors, reviews, rental-shops,
-  measurements, measurement-visits, business-applications against a live
-  Postgres; one domain-logic unit test; only `admin` left to cover)
+  measurements, measurement-visits, business-applications, admin against
+  a live Postgres; one domain-logic unit test; `notifications`'
+  own endpoints, `users`, and `styling` still uncovered)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1305,7 +1306,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Eleven spec files, all run for real against Postgres:**
+**Twelve spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1371,6 +1372,23 @@ job, same real `postgres:16` service container already there for
   reviewing a nonexistent id 404s and reviewing an already-decided one
   400s; `GET /admin/business-applications?status=` filters correctly and
   a just-approved application drops out of the `PENDING` filter.
+- `admin.e2e-spec.ts` — every `/admin/*` route 401s/403s a non-admin;
+  `GET /admin/stats` reflects real before/after deltas (not just a
+  200) across `userCount`, `tailorCount`, `pendingApprovals`,
+  `ordersThisMonth`, and `totalRevenue` after creating the underlying
+  rows directly; `POST /admin/users`/`/admin/tailors` both require an
+  email or phone and 409 on a duplicate, and the tailor path bypasses
+  the application queue straight to `APPROVED` (`AdminService.createTailor`
+  is the one other code path — besides `provisionBusinessProfile` — that
+  can create a `TailorProfile`); user/tailor/rental-shop listings filter
+  correctly by role/search text, `completedOrders`/`itemCount` reflect
+  real `DELIVERED`-order/`RentalItem` counts; suspend/reactivate on all
+  three notifies the affected user, a suspended user's still-valid JWT
+  is rejected immediately (same `JwtStrategy` check `auth.e2e-spec.ts`
+  proves, exercised here via the actual admin action instead of a direct
+  DB write), a no-op transition (suspending an already-suspended user, or
+  a tailor/shop that isn't currently `APPROVED`) 400s, and every
+  suspend/reactivate/create 404s a nonexistent id.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1395,7 +1413,7 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (11 suites / 66 tests) green, confirmed on this
+`npm run test:e2e` (12 suites / 77 tests) green, confirmed on this
 machine rather than assumed from CI config. After each run, queried
 `User` for the `@test.dev` marker every factory user's email uses —
 zero rows, so `cleanupUsers` is actually leaving nothing behind rather
@@ -1472,12 +1490,15 @@ at a time, detached from the tool's own process lifecycle
 (`nohup ... & disown`, polled via a separate log file) so a slow but
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
-**Not done yet, left for a follow-up pass:** e2e coverage for the rest
-of `admin.controller.ts` — `stats`, `users` (list/create/suspend/
-reactivate), `tailors`/`rental-shops` admin CRUD/suspend/reactivate —
-still relies only on the manual `curl` verification recorded in its own
-phase entry above, not an automated spec file. (`business-applications`'
-own admin routes — `business-applications/:id/approve`/`reject` and
-`GET business-applications` — are now covered by
-`business-applications.e2e-spec.ts`.)
+**Not done yet, left for a follow-up pass:** every domain module now has
+real e2e coverage except three small ones, still relying only on the
+manual `curl` verification recorded in their own phase entries above —
+`notifications`' own endpoints (`GET /notifications/unread-count`,
+`POST /notifications/:id/read`, `POST /notifications/read-all` — its
+list endpoint and the `type`/`body` of individual notifications are
+already exercised indirectly, as a side-effect check, by nearly every
+other spec file, just never as the thing under test), `users` (`GET
+/users/me` is a two-line passthrough), and `styling` (blocked on a real
+`ANTHROPIC_API_KEY` per the Phase 8 entry above — the one thing testable
+without that key is its clean `503` fallback).
 
