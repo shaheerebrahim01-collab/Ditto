@@ -16,8 +16,8 @@ continues this project should read this file first.
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
   messaging, orders, payments, rentals, tailors, reviews, rental-shops,
-  measurements, measurement-visits against a live Postgres; one
-  domain-logic unit test; more modules to cover)
+  measurements, measurement-visits, business-applications against a live
+  Postgres; one domain-logic unit test; only `admin` left to cover)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1305,7 +1305,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Ten spec files, all run for real against Postgres:**
+**Eleven spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1357,6 +1357,20 @@ job, same real `postgres:16` service container already there for
   tailor who isn't the assigned one; and both `claim` and `complete`
   fire the `visit_assigned`/`visit_completed` notifications they
   document.
+- `business-applications.e2e-spec.ts` — covers the whole applicant→admin
+  lifecycle in one file, not just `POST /business-applications`: rejects
+  applying for a business type the applicant already holds and rejects a
+  second application while one's already pending (regardless of type);
+  a non-admin 401s/403s trying to review one; approving a `tailor` or
+  `rental_shop` application bumps `User.role` *and* upserts an `APPROVED`
+  `TailorProfile`/`RentalShopProfile` in the same transaction
+  (`AdminService.provisionBusinessProfile`), approving `designer` bumps
+  the role with no profile model (none exists yet for `designer`/
+  `embroidery`, per `CLAUDE.md`); rejecting leaves the role untouched and its
+  `application_rejected` notification includes the admin's `reviewNotes`;
+  reviewing a nonexistent id 404s and reviewing an already-decided one
+  400s; `GET /admin/business-applications?status=` filters correctly and
+  a just-approved application drops out of the `PENDING` filter.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1381,7 +1395,7 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (10 suites / 54 tests) green, confirmed on this
+`npm run test:e2e` (11 suites / 66 tests) green, confirmed on this
 machine rather than assumed from CI config. After each run, queried
 `User` for the `@test.dev` marker every factory user's email uses —
 zero rows, so `cleanupUsers` is actually leaving nothing behind rather
@@ -1458,8 +1472,12 @@ at a time, detached from the tool's own process lifecycle
 (`nohup ... & disown`, polled via a separate log file) so a slow but
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
-**Not done yet, left for a follow-up pass:** e2e coverage for
-`business-applications` and `admin` still relies only on the manual
-`curl` verification recorded in their own phase entries above, not an
-automated spec file.
+**Not done yet, left for a follow-up pass:** e2e coverage for the rest
+of `admin.controller.ts` — `stats`, `users` (list/create/suspend/
+reactivate), `tailors`/`rental-shops` admin CRUD/suspend/reactivate —
+still relies only on the manual `curl` verification recorded in its own
+phase entry above, not an automated spec file. (`business-applications`'
+own admin routes — `business-applications/:id/approve`/`reject` and
+`GET business-applications` — are now covered by
+`business-applications.e2e-spec.ts`.)
 
