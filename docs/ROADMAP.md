@@ -14,11 +14,13 @@ continues this project should read this file first.
 - [x] Phase 9 — Messaging & notifications
 - [ ] Phase 10 — Payments (backend + mobile built up to the real Stripe Connect account; blocked there, see phase entry)
 - [x] Phase 11 — Production infrastructure
-- [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
-  messaging, orders, payments, rentals, tailors, reviews, rental-shops,
-  measurements, measurement-visits, business-applications, admin,
-  notifications, users against a live Postgres; one domain-logic unit
-  test; only `styling` still uncovered, blocked on `ANTHROPIC_API_KEY`)
+- [x] Phase 12 — Testing & QA (real e2e coverage against a live Postgres
+  for every domain module — auth, messaging, orders, payments, rentals,
+  tailors, reviews, rental-shops, measurements, measurement-visits,
+  business-applications, admin, notifications, users, styling — plus one
+  domain-logic unit test; styling's own happy path stays untested since
+  it needs a real `ANTHROPIC_API_KEY`, a Phase 8 blocker, not a Phase 12
+  gap — its clean-503 fallback and DTO validation are covered instead)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1290,7 +1292,7 @@ instruction:
    `VITE_API_BASE_URL` to `https://<API_DOMAIN>` so
    `docker-publish.yml`'s admin image build stops using its placeholder.
 
-## Phase 12 — testing & QA (in progress)
+## Phase 12 — testing & QA
 
 `backend/test/` — a real e2e harness (`utils/test-app.ts`) that boots the
 actual `AppModule` (`Test.createTestingModule({ imports: [AppModule] })`,
@@ -1306,7 +1308,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Fourteen spec files, all run for real against Postgres:**
+**Fifteen spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1408,6 +1410,15 @@ job, same real `postgres:16` service container already there for
   `payload.sub` doesn't resolve to a real, non-suspended `User` before
   the controller ever runs — so there's no reachable "authenticated as a
   deleted user" state to exercise here.)
+- `styling.e2e-spec.ts` — the last module to cover, and the only one
+  whose real happy path (an actual Claude tool-use call) isn't
+  exercisable in this environment, since `ANTHROPIC_API_KEY` isn't set
+  (confirmed the test's own environment has it unset, rather than just
+  assuming). What's real and tested instead: 401s unauthenticated, 400s
+  a request missing the required `occasion` field, and — the one thing
+  this module is for — `StylingService.recommend` returns a clean `503`
+  with a message pointing at the missing key and the Phase 8 ROADMAP
+  entry, not a raw Anthropic SDK crash or an unhandled exception.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1432,7 +1443,7 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (14 suites / 85 tests) green, confirmed on this
+`npm run test:e2e` (15 suites / 88 tests) green, confirmed on this
 machine rather than assumed from CI config (the first `notifications`
 run alone hit the `beforeAll` hook's 60s cold-boot budget — this dev
 machine had unrelated node dev servers from other local projects also
@@ -1513,10 +1524,10 @@ at a time, detached from the tool's own process lifecycle
 (`nohup ... & disown`, polled via a separate log file) so a slow but
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
-**Not done yet, left for a follow-up pass:** every domain module now has
-real e2e coverage except `styling`, still relying only on the manual
-`curl` verification recorded in its Phase 8 entry above — blocked on a
-real `ANTHROPIC_API_KEY`; the one thing testable without that key is its
-clean `503` fallback, which is itself worth an automated spec once
-picked up.
+**Nothing left uncovered that's actually buildable right now.** Every
+domain module has real e2e coverage. `styling`'s one gap —
+`StylingService.recommend`'s actual Claude tool-use call — needs a real
+`ANTHROPIC_API_KEY`, the same Phase 8 blocker, not a Phase 12 one;
+revisit that spec file once the key exists, rather than opening a new
+one.
 
