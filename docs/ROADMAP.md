@@ -17,8 +17,8 @@ continues this project should read this file first.
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
   messaging, orders, payments, rentals, tailors, reviews, rental-shops,
   measurements, measurement-visits, business-applications, admin,
-  notifications against a live Postgres; one domain-logic unit test;
-  only `users` and `styling` still uncovered)
+  notifications, users against a live Postgres; one domain-logic unit
+  test; only `styling` still uncovered, blocked on `ANTHROPIC_API_KEY`)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1306,7 +1306,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Thirteen spec files, all run for real against Postgres:**
+**Fourteen spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1398,6 +1398,16 @@ job, same real `postgres:16` service container already there for
   404s another user's, is idempotent on an already-read one, and 404s a
   nonexistent id; `POST /notifications/read-all` only touches the
   caller's own unread rows, leaving another user's untouched.
+- `users.e2e-spec.ts` — the smallest module in the codebase
+  (`UsersController` is a single `GET /users/me` passthrough to
+  `UsersService.findById`), covered proportionately: 401s unauthenticated,
+  the returned profile matches the real `User` row, and two different
+  callers each get back only their own — scoped off the JWT, not a
+  hardcoded row. (`findById`'s own `NotFoundException` branch is
+  unreachable in practice — `JwtStrategy.validate` already 401s if
+  `payload.sub` doesn't resolve to a real, non-suspended `User` before
+  the controller ever runs — so there's no reachable "authenticated as a
+  deleted user" state to exercise here.)
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1422,7 +1432,7 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (13 suites / 82 tests) green, confirmed on this
+`npm run test:e2e` (14 suites / 85 tests) green, confirmed on this
 machine rather than assumed from CI config (the first `notifications`
 run alone hit the `beforeAll` hook's 60s cold-boot budget — this dev
 machine had unrelated node dev servers from other local projects also
@@ -1504,9 +1514,9 @@ at a time, detached from the tool's own process lifecycle
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
 **Not done yet, left for a follow-up pass:** every domain module now has
-real e2e coverage except two small ones, still relying only on the
-manual `curl` verification recorded in their own phase entries above —
-`users` (`GET /users/me` is a two-line passthrough) and `styling`
-(blocked on a real `ANTHROPIC_API_KEY` per the Phase 8 entry above — the
-one thing testable without that key is its clean `503` fallback).
+real e2e coverage except `styling`, still relying only on the manual
+`curl` verification recorded in its Phase 8 entry above — blocked on a
+real `ANTHROPIC_API_KEY`; the one thing testable without that key is its
+clean `503` fallback, which is itself worth an automated spec once
+picked up.
 
