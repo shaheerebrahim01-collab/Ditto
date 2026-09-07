@@ -16,9 +16,9 @@ continues this project should read this file first.
 - [x] Phase 11 — Production infrastructure
 - [ ] Phase 12 — Testing & QA (in progress — real e2e coverage for auth,
   messaging, orders, payments, rentals, tailors, reviews, rental-shops,
-  measurements, measurement-visits, business-applications, admin against
-  a live Postgres; one domain-logic unit test; `notifications`'
-  own endpoints, `users`, and `styling` still uncovered)
+  measurements, measurement-visits, business-applications, admin,
+  notifications against a live Postgres; one domain-logic unit test;
+  only `users` and `styling` still uncovered)
 - [ ] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
@@ -1306,7 +1306,7 @@ into CI (`.github/workflows/ci.yml` now runs `npm run test:e2e` — added
 job, same real `postgres:16` service container already there for
 `prisma migrate deploy`).
 
-**Twelve spec files, all run for real against Postgres:**
+**Thirteen spec files, all run for real against Postgres:**
 - `auth.e2e-spec.ts` — rejects unauthenticated/wrong-role requests on
   protected and admin-only routes; a suspended user's still-valid JWT
   stops working immediately (proves `JwtStrategy`'s fresh DB check, not
@@ -1389,6 +1389,15 @@ job, same real `postgres:16` service container already there for
   DB write), a no-op transition (suspending an already-suspended user, or
   a tailor/shop that isn't currently `APPROVED`) 400s, and every
   suspend/reactivate/create 404s a nonexistent id.
+- `notifications.e2e-spec.ts` — a caller only ever sees their own
+  notifications (seeded directly via Prisma, the way every other spec's
+  `NotificationsService.create` side effects are seeded, since there's
+  no "create a notification for someone else" endpoint), newest first;
+  `unreadOnly=true` and `GET /notifications/unread-count` both reflect
+  only the caller's actual unread rows; `POST /notifications/:id/read`
+  404s another user's, is idempotent on an already-read one, and 404s a
+  nonexistent id; `POST /notifications/read-all` only touches the
+  caller's own unread rows, leaving another user's untouched.
 - `garment-pricing.spec.ts` (`backend/src/modules/orders/`) — a plain
   Jest unit test (no app boot) covering `computeOrderPrice`'s pricing
   table directly: cheapest combination, every upgrade stacking, the
@@ -1413,8 +1422,12 @@ empty state rather than calling this endpoint.
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)
 — `npx tsc --noEmit` clean, `npm test` (2 suites / 9 tests) green,
-`npm run test:e2e` (12 suites / 77 tests) green, confirmed on this
-machine rather than assumed from CI config. After each run, queried
+`npm run test:e2e` (13 suites / 82 tests) green, confirmed on this
+machine rather than assumed from CI config (the first `notifications`
+run alone hit the `beforeAll` hook's 60s cold-boot budget — this dev
+machine had unrelated node dev servers from other local projects also
+running and competing for its 4 cores at the time, not a code issue; a
+bare re-run passed in 43s). After each run, queried
 `User` for the `@test.dev` marker every factory user's email uses —
 zero rows, so `cleanupUsers` is actually leaving nothing behind rather
 than just not erroring.
@@ -1491,14 +1504,9 @@ at a time, detached from the tool's own process lifecycle
 genuinely-progressing run isn't mistaken for a hang and killed early.
 
 **Not done yet, left for a follow-up pass:** every domain module now has
-real e2e coverage except three small ones, still relying only on the
+real e2e coverage except two small ones, still relying only on the
 manual `curl` verification recorded in their own phase entries above —
-`notifications`' own endpoints (`GET /notifications/unread-count`,
-`POST /notifications/:id/read`, `POST /notifications/read-all` — its
-list endpoint and the `type`/`body` of individual notifications are
-already exercised indirectly, as a side-effect check, by nearly every
-other spec file, just never as the thing under test), `users` (`GET
-/users/me` is a two-line passthrough), and `styling` (blocked on a real
-`ANTHROPIC_API_KEY` per the Phase 8 entry above — the one thing testable
-without that key is its clean `503` fallback).
+`users` (`GET /users/me` is a two-line passthrough) and `styling`
+(blocked on a real `ANTHROPIC_API_KEY` per the Phase 8 entry above — the
+one thing testable without that key is its clean `503` fallback).
 
