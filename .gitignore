@@ -4,3 +4,4 @@ dist/
 .env.prod
 *.log
 .DS_Store
+/backups/

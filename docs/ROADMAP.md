@@ -22,7 +22,8 @@ continues this project should read this file first.
   it needs a real `ANTHROPIC_API_KEY`, a Phase 8 blocker, not a Phase 12
   gap — its clean-503 fallback and DTO validation are covered instead)
 - [x] Phase 13 — Security hardening
-- [ ] Phase 14 — Deployment
+- [x] Phase 14 — Deployment (prepared everything buildable without a real
+  VPS/domain; see phase entry for the exact remaining credential wall)
 - [ ] Phase 15 — App Store & Google Play release prep
 
 **Note on roles:** no dedicated "Delivery Partner" app role. Ditto uses an
@@ -1656,4 +1657,83 @@ turn the silent-strip behavior `tailors.e2e-spec.ts` and
 into a `400`, which is a real behavior change to existing, already-tested,
 already-correct semantics — not something to fold into a hardening pass
 without a deliberate decision to make that change.
+
+## Phase 14 — deployment
+
+Phase 11 already built and locally-verified the actual production stack
+(Dockerfiles, `docker-compose.prod.yml`, Caddy, CI). What Phase 11
+deliberately didn't cover: the operator-facing side of actually running
+that stack day to day — a runbook, and a backup/restore path for the one
+thing in the whole stack that isn't reproducible from source control, the
+Postgres data volume. Both are genuinely buildable without a real VPS or
+domain, so both are done now rather than left for Phase 11 to have
+covered.
+
+**`scripts/backup-db.sh` / `scripts/restore-db.sh`** — `pg_dump --clean
+--if-exists`, gzipped, timestamped, against whichever compose file is
+passed in (`docker-compose.prod.yml` by default, `docker-compose.yml` for
+local dev); restore replays the dump through `psql -v ON_ERROR_STOP=1`,
+prompting for confirmation before dropping tables unless `FORCE=1` is set
+for scripted use. Both read `POSTGRES_USER`/`POSTGRES_DB` from the running
+container's own environment rather than a separately-sourced `.env` file,
+so they can never point at the wrong database by drifting from whatever
+the container actually started with. `--clean --if-exists` specifically
+means a restore replays cleanly into a database that already has the same
+tables (dropping and recreating them) rather than erroring on "relation
+already exists" — the failure mode a plain `pg_dump` would hit on any
+restore that isn't into a totally empty database.
+
+**`docs/DEPLOYMENT.md`** — the operator runbook: prerequisites (the real
+credential wall — VPS, DNS, `.env.prod`), first deploy, routine deploys
+(`up -d --build`, not bare `up -d` — the exact "reused a stale image"
+mistake Phase 11 already found and recorded, closed here for good by
+making `--build` part of the documented command itself), rollback and its
+one real caveat (a forward-only Prisma migration doesn't roll back with
+the code, so rolling back past one means restoring the last backup taken
+before it, not hand-writing a down-migration), day-to-day log/exec
+commands, and secret-rotation behavior (`JWT_SECRET` specifically:
+rotating it invalidates every currently-issued token at once, a
+deliberate/communicated action, not a silent config edit).
+
+**Verified for real, not just written:** ran both scripts against the
+real local dev Postgres container (`docker compose up -d`, the same one
+every other phase's e2e verification already uses) — a real `pg_dump`
+produced a real gzipped `.sql.gz`, inspected its contents directly
+(confirmed the `\restrict`/`SET`/schema header and the `--clean`
+`DROP ... IF EXISTS` statements are actually present, not assumed from the
+flag alone), then a real `FORCE=1` restore replayed it back into the same
+running container end to end (`DROP TABLE` → `CREATE TYPE`/`CREATE TABLE`
+→ `COPY` → `CREATE INDEX` → `ALTER TABLE` for every one of the schema's
+tables, finishing with the script's own success line) — proving the
+`--clean` dump is actually restorable, not just producible. Temporary
+backup file deleted afterward; confirmed via `git status` that nothing
+from the test run leaked into the repo.
+
+**A real stray file found and removed in this pass, not introduced by
+it:** `admin-audit.json` at the repo root — an error dump from an `npm
+audit` invocation run from the wrong directory in an earlier session (no
+lockfile at the repo root for it to audit), not real audit output.
+Recorded here rather than silently deleted since it's exactly the kind of
+"unfamiliar file, investigate before removing" case this project's own
+working conventions call for — confirmed it was disposable error text,
+not in-progress work, before deleting it.
+
+**The real stopping point, same shape as Phase 11's.** Everything above
+is genuinely runnable today. What's still deferred, and why each one
+specifically needs a credential/account this environment doesn't have:
+- **Automated deploy-on-push to the VPS itself** — `docker-publish.yml`
+  (Phase 11) already builds and pushes images to `ghcr.io` on every push
+  to `main`; actually SSHing into a real host to pull and restart in
+  response needs that host's real connection details to write and verify
+  against, the same "can't verify without the real thing" wall every
+  other credential-gated piece of this project has hit. Additive once the
+  VPS exists, not a redesign.
+- **Off-server backup shipping** (S3/other remote storage for the dump
+  files `backup-db.sh` produces) — same shape of gap as the
+  `AWS_S3_BUCKET`/`CLOUDINARY_URL` image-upload gap already open elsewhere
+  (Phase 11).
+- **Uptime/alerting monitoring** against `/health` — needs a real account
+  with an external monitoring service; the endpoint it would watch
+  already exists and already works, confirmed by every phase back to
+  Phase 1.
 
