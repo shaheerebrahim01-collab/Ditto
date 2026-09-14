@@ -1,8 +1,12 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import * as jwt from 'jsonwebtoken';
+import helmet from 'helmet';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { getJwtSecret } from '../../src/modules/auth/jwt-secret';
+import { getCorsOptions } from '../../src/cors-options';
 
 // Boots the real app (real Prisma, real Postgres, every real module/guard/
 // pipe) exactly the way main.ts does — the same "real DB/HTTP calls, not
@@ -12,9 +16,14 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 // since booting the full module graph isn't free.
 export async function createTestApp(): Promise<{ app: INestApplication; prisma: PrismaService }> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  // rawBody: true mirrors main.ts exactly — POST /payments/webhook reads
-  // req.rawBody to verify Stripe's signature, and won't see it otherwise.
-  const app = moduleRef.createNestApplication({ rawBody: true });
+  // Same rawBody/bodyParser/helmet/CORS setup as main.ts's bootstrap() —
+  // kept in sync by hand since tests build the app via Nest's testing
+  // module rather than importing main.ts itself.
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true, bodyParser: false });
+  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '1mb' });
+  app.use(helmet());
+  app.enableCors(getCorsOptions());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   await app.init();
   const prisma = app.get(PrismaService);
@@ -25,8 +34,7 @@ export async function createTestApp(): Promise<{ app: INestApplication; prisma: 
 // secret resolution) — lets tests act as an arbitrary user without going
 // through a real Firebase sign-in.
 export function signTestToken(userId: string, role: string): string {
-  const secret = process.env.JWT_SECRET ?? 'dev-secret-change-me';
-  return jwt.sign({ sub: userId, role }, secret, { expiresIn: '1h' });
+  return jwt.sign({ sub: userId, role }, getJwtSecret(), { expiresIn: '1h' });
 }
 
 export function authHeader(userId: string, role: string): [string, string] {

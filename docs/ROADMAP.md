@@ -21,7 +21,7 @@ continues this project should read this file first.
   domain-logic unit test; styling's own happy path stays untested since
   it needs a real `ANTHROPIC_API_KEY`, a Phase 8 blocker, not a Phase 12
   gap — its clean-503 fallback and DTO validation are covered instead)
-- [ ] Phase 13 — Security hardening
+- [x] Phase 13 — Security hardening
 - [ ] Phase 14 — Deployment
 - [ ] Phase 15 — App Store & Google Play release prep
 
@@ -1530,4 +1530,130 @@ domain module has real e2e coverage. `styling`'s one gap —
 `ANTHROPIC_API_KEY`, the same Phase 8 blocker, not a Phase 12 one;
 revisit that spec file once the key exists, rather than opening a new
 one.
+
+## Phase 13 — security hardening
+
+Four cross-cutting gaps, all fixed directly in `main.ts`/`test-app.ts` and
+their supporting modules rather than added as a bolt-on layer — no
+credential or account needed, so this phase is fully closed, not deferred.
+
+**No insecure fallback for `JWT_SECRET`.** `JwtModule.register` and
+`JwtStrategy` both used to fall back to a hardcoded `'dev-secret-change-me'`
+string when the env var was unset — meaning anyone who'd read this
+repo (or the ROADMAP snippets quoting that string) could forge a valid
+JWT for any user/role, including `ADMIN`, on any deployment that forgot to
+set it. New `modules/auth/jwt-secret.ts` (`getJwtSecret()`) throws
+immediately instead — `.env.example`/`.env.prod.example` already
+documented the var as required, this just makes that requirement real
+rather than a comment nothing enforced. Both `JwtModule.register` and
+`JwtStrategy` now call it; `test/utils/test-app.ts`'s `signTestToken` does
+too, so the test suite and the real app can never drift onto different
+secrets.
+
+**Helmet security headers, everywhere.** `app.use(helmet())` in both
+`main.ts` and `test/utils/test-app.ts` (mirrored by hand, same as every
+other bootstrap option there) — `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: SAMEORIGIN`, a default CSP, HSTS, etc. on every response.
+
+**CORS is now an explicit allowlist in production, not wide open.**
+`app.enableCors()` with no arguments (the prior state) reflects whatever
+`Origin` header the caller sends — fine for the mobile apps' native HTTP
+calls (no browser origin to restrict) but unnecessarily permissive for the
+one real browser client, the admin dashboard. New `src/cors-options.ts`
+(`getCorsOptions()`, shared by `main.ts` and `test-app.ts` — they already
+drifted once, see below): `CORS_ORIGIN` unset (local dev, e2e tests) means
+"allow any origin," matching today's behavior exactly; set (production)
+restricts to that comma-separated list. `docker-compose.prod.yml` now sets
+`CORS_ORIGIN: https://${ADMIN_DOMAIN}` — the only browser origin that
+should ever be allowed to call the API cross-origin — documented alongside
+the other prod-only vars the same way `.env.prod.example` already does.
+
+**Rate limiting via `@nestjs/throttler`, global default plus tighter
+per-route budgets.** `ThrottlerModule.forRoot([{ name: 'default', ttl:
+60000, limit: 100 }])` wired in as the global `APP_GUARD` in
+`app.module.ts` — 100 req/min per IP per route (`ThrottlerGuard`'s key is
+controller+handler+IP, so this is an independent budget per endpoint, not
+one shared bucket across the whole API). Two routes override it tighter
+with `@Throttle()`, both for the same reason — each real call is expensive
+or billed, not because either is more security-sensitive than the rest of
+the API: `POST /auth/firebase` (10/min — a real Firebase token
+verification plus a DB lookup/create every call) and `POST
+/styling/recommend` (5/min — once `ANTHROPIC_API_KEY` is live, a real
+billed Claude request every call).
+
+**A request-body size limit.** `main.ts` used to create the Nest app with
+its default body-parser config, which has no explicit limit. Switched to
+`bodyParser: false` at app-creation time plus explicit
+`app.useBodyParser('json', { limit: '1mb' })` /
+`app.useBodyParser('urlencoded', { extended: true, limit: '1mb' })` calls —
+the supported way to set a limit while still keeping the existing
+`rawBody: true` wiring `POST /payments/webhook` needs (an implicit
+"disable the parser entirely and hand-roll it" approach would have broken
+that). 1mb comfortably covers every real payload this API accepts today
+(the largest is a styling request's freeform text) with room to spare.
+
+**A real bug this pass found, not guessed:** `test/utils/test-app.ts`
+originally mirrored `rawBody`/`bodyParser`/`helmet` from `main.ts` by hand
+but missed `enableCors()` entirely — the two had already silently drifted.
+`security.e2e-spec.ts`'s CORS test caught it as a failing assertion before
+this was found any other way. Fixed by extracting `getCorsOptions()` into
+its own file (`src/cors-options.ts`) that both `main.ts` and `test-app.ts`
+import, so the two can't drift again the way they just did — same
+reasoning `jwt-secret.ts` already applies to the JWT secret.
+
+**Dependency audit.** `npm audit fix` (non-breaking) applied in both
+`backend/` and `admin/` — picked up patch-level fixes (`qs` in `backend/`;
+`nanoid`, `react-router`/`react-router-dom` in `admin/`). `admin/`'s
+production dependencies are now at 0 known vulnerabilities. `backend/`'s
+production dependencies still show 17 (1 low, 13 moderate, 3 high) after
+that pass — all of them require `npm audit fix --force`, which would bump
+`@nestjs/platform-express` to a new major version (pulling in a fixed
+`multer`) and `firebase-admin` to a new major version (pulling in a fixed
+`uuid` through its own `@google-cloud/firestore`/`@google-cloud/storage`
+dependency chain). Deliberately not forced this pass: both are breaking
+major-version bumps to load-bearing packages (Nest's own HTTP platform,
+and the Firebase Auth verification every login depends on) that need
+their own dedicated upgrade-and-reverify pass, not something to fold into
+a routine `npm ci` without the ability to actually re-run the full
+Firebase-login flow against a live Firebase project afterward — the same
+"real credential, real verification, not guessed" bar this whole project
+has held at every other upgrade. Confirmed the practical exposure is
+currently near-zero either way: grepped `backend/src` for `multer`/
+`FileInterceptor` — zero matches, so the vulnerable code path isn't
+reachable at all today (no file-upload endpoint exists yet, same
+`AWS_S3_BUCKET`/`CLOUDINARY_URL` gap Phase 11 already documented); the
+`uuid` chain is only reachable through `firebase-admin`'s Firestore/Storage
+clients, which this app never touches (only Auth token verification is
+used). Revisit both upgrades together with the next real feature that
+touches either surface (file upload, or a `firebase-admin` version bump
+for another reason) rather than as a standalone breaking change today.
+
+**Verified for real, not just written:** ran the actual suite against the
+actual dev Postgres container — `npx tsc --noEmit` clean, `npm test` (3
+suites / 11 tests, up from 2/9 — the new `jwt-secret.spec.ts` covers both
+the real-secret and throws-when-unset paths) green, `npm run test:e2e` (16
+suites / 92 tests, up from 15/88 — the new `security.e2e-spec.ts` covers
+helmet headers, the any-origin-when-unset CORS default, the 1mb body
+rejection, and the auth/firebase throttle actually tripping 429 on the
+11th call within a minute) green. `admin/`'s `npm run build` and `npm run
+lint` both clean. `backend/`'s `npm run build` (`nest build`) clean.
+Confirmed via `git status` after the `npm audit fix` runs that only
+`package.json`/`package-lock.json` changed in each project — no stray
+files. Also found and removed one stray leftover from an earlier session:
+a `admin-audit.json` at the repo root, an error dump from an `npm audit`
+invocation that had been run from the wrong directory (no lockfile there)
+rather than real audit output — deleted, not real content worth keeping.
+
+**Deliberately out of scope, not gaps:** login/password brute-forcing
+isn't a concern here — there's no password endpoint at all, Firebase Auth
+owns that surface entirely and this API only ever verifies a token it
+already trusts. `ValidationPipe`'s `whitelist: true` (global since Phase
+1) already rejects/strips unrecognized fields on every DTO; adding
+`forbidNonWhitelisted: true` on top was considered and rejected — it would
+turn the silent-strip behavior `tailors.e2e-spec.ts` and
+`rental-shops.e2e-spec.ts` already assert on (an unrecognized field like
+`status`/`ratingAvg` on an update DTO gets quietly dropped, not rejected)
+into a `400`, which is a real behavior change to existing, already-tested,
+already-correct semantics — not something to fold into a hardening pass
+without a deliberate decision to make that change.
 

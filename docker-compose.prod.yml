@@ -37,6 +37,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET}
+      # The only browser origin allowed to call the API cross-origin —
+      # see backend/.env.example and backend/src/main.ts.
+      CORS_ORIGIN: https://${ADMIN_DOMAIN}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
       FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
