@@ -24,7 +24,9 @@ continues this project should read this file first.
 - [x] Phase 13 — Security hardening
 - [x] Phase 14 — Deployment (prepared everything buildable without a real
   VPS/domain; see phase entry for the exact remaining credential wall)
-- [ ] Phase 15 — App Store & Google Play release prep
+- [x] Phase 15 — App Store & Google Play release prep (copy, keywords,
+  privacy policy draft, and asset requirements prepared; stops before
+  real Apple Developer/Google Play enrollment — see phase entry)
 
 **Note on roles:** no dedicated "Delivery Partner" app role. Ditto uses an
 in-person Tailor Assistant Partner Program instead (training, certificate,
@@ -1736,4 +1738,56 @@ specifically needs a credential/account this environment doesn't have:
   with an external monitoring service; the endpoint it would watch
   already exists and already works, confirmed by every phase back to
   Phase 1.
+
+## Phase 15 — App Store & Google Play release prep
+
+`docs/APP_STORE_LISTING.md` — store copy and asset requirements for both
+apps, prepared against what's actually built rather than aspirational
+copy: pulled feature bullets straight from what Phases 4/5/7/8/9/10 each
+actually shipped (garment Create flow with real pricing, measurement
+visits, rental browsing/booking, in-app messaging, AI styling with its
+current not-yet-configured caveat spelled out), not a marketing wishlist.
+
+Covers, for both `customer_app` and the `tailor_app`/rental-shop-owner
+listing (one app, two roles client-side, so one store listing each — not
+three, matching `docs/ARCHITECTURE.md`'s existing role-branch note):
+name, subtitle, full description, keywords, category, and age rating; a
+"What we collect" section written directly against `schema.prisma` and
+each app's actual data flow (account info via Firebase, measurements,
+order/payment references — Stripe holds the real card data, not this
+app's DB — messages, and portfolio/inventory photos once Phase 11's
+storage credential exists) for filling in Apple's App Privacy and Google
+Play's Data Safety questionnaires accurately rather than guessing at
+submission time; a full privacy-policy draft (needs a real URL to host it
+at before either store accepts it — same domain dependency Phase 11's
+stopping point already has); and current icon/screenshot size
+requirements, flagged to double check against each console at submission
+time since both platforms have changed these before.
+
+**Real, currently-open gaps this phase surfaced, not fixed (not this
+phase's job to fix):** no actual app icon artwork exists yet — both
+apps still ship Flutter's default template placeholder icons
+(`web/icons/Icon-*.png`) — and neither app has generated its `ios/`
+platform folder yet, since that needs a real Apple Developer team id
+(same open step already flagged back in Phases 4/5). Real screenshots
+can't be captured honestly yet either, since several screens still render
+against mock data or empty states ahead of the "full design pass" already
+listed under this ROADMAP's own "Deferred" section — captured here as a
+concrete blocker on submission specifically, not a new deferral.
+
+**Verified:** every feature claim in the store copy was checked against
+this ROADMAP's own phase entries and `schema.prisma` before being
+written, not assumed from the app's working name. No code changes this
+phase — copy and a requirements checklist only, so there's nothing to
+run `tsc`/`test`/`build` against; the "verification" here is internal
+consistency against what's actually shipped, the same bar every other
+phase's ROADMAP entry holds itself to.
+
+**The real stopping point.** Same credential wall as every prior
+phase's, just a different kind of credential: enrolling in the Apple
+Developer Program and a Google Play Console developer account both cost
+real money and require real legal-entity details neither this environment
+nor this session has. `docs/APP_STORE_LISTING.md`'s "Submission
+checklist" section is the exact sequence to pick this back up once that
+enrollment exists.
 
