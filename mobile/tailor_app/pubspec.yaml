@@ -27,6 +27,25 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+# Ditto brand palette (lib/core/theme.dart), inverted from customer_app's
+# icon so the two are visually distinguishable at a glance on a home
+# screen that has both installed: brown background, cream "D" monogram,
+# gold accent dot. ios: false — see the same note in customer_app's
+# pubspec.yaml; neither app has generated its ios/ platform folder yet.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#8A6244"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#8A6244"
+    theme_color: "#8A6244"

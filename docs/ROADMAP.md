@@ -1764,24 +1764,52 @@ stopping point already has); and current icon/screenshot size
 requirements, flagged to double check against each console at submission
 time since both platforms have changed these before.
 
-**Real, currently-open gaps this phase surfaced, not fixed (not this
-phase's job to fix):** no actual app icon artwork exists yet — both
-apps still ship Flutter's default template placeholder icons
-(`web/icons/Icon-*.png`) — and neither app has generated its `ios/`
-platform folder yet, since that needs a real Apple Developer team id
-(same open step already flagged back in Phases 4/5). Real screenshots
-can't be captured honestly yet either, since several screens still render
-against mock data or empty states ahead of the "full design pass" already
-listed under this ROADMAP's own "Deferred" section — captured here as a
-concrete blocker on submission specifically, not a new deferral.
+**Real app icon artwork, added in a follow-up pass (both apps no longer
+ship Flutter's default template placeholder).** A solid "D" monogram — a
+rounded spine plus a semicircular bowl, deliberately no counter/hole so it
+still reads at favicon scale — plus a small gold accent dot, built from
+`mobile/*/lib/core/theme.dart`'s existing palette rather than a new one.
+`customer_app` and `tailor_app` invert the same mark (brown-on-cream vs.
+cream-on-brown) so the two are distinguishable at a glance on a home
+screen with both installed, while still visibly one brand family — the
+exact "distinct enough between the two apps" requirement this phase's
+own first pass had flagged as still open.
+
+Built as hand-authored SVG (a `<rect>` spine + a semicircle-bowl `<path>`,
+no freehand curves to get wrong), rendered to 1024×1024 PNG via `sharp`
+(source SVGs and both PNG variants — a flat opaque version and a
+transparent-background version for Android's adaptive-icon foreground —
+committed to `mobile/*/assets/icon/`). `flutter_launcher_icons` (new dev
+dependency, config block in each `pubspec.yaml`) generated every Android
+mipmap density, the adaptive-icon XML/`colors.xml`, and regenerated the
+web `manifest.json`/`favicon.png`/`Icon-*.png` set from those two source
+images. Also fixed, found while touching these same files: both apps'
+`web/manifest.json`/`index.html` still had Flutter's scaffold-default
+name/description ("customer_app", "tailor_app", "A new Flutter
+project.") — replaced with the real app names/descriptions from this
+phase's own store copy above, so the browser tab and PWA-install prompt
+say "Ditto"/"Ditto for Business", not the internal package name.
+
+**Still genuinely open, not fixed by this pass:** neither app has
+generated its `ios/` platform folder yet, since that needs a real Apple
+Developer team id (same gap flagged back in Phases 4/5) — both
+`pubspec.yaml`s have `ios: false` in their `flutter_launcher_icons:`
+config for exactly this reason; flip it once `ios/` exists. Real
+screenshots still can't be captured honestly, since several screens still
+render against mock data or empty states ahead of the "full design pass"
+already listed under this ROADMAP's own "Deferred" section — the icon
+gap is now closed, that one isn't.
 
 **Verified:** every feature claim in the store copy was checked against
 this ROADMAP's own phase entries and `schema.prisma` before being
-written, not assumed from the app's working name. No code changes this
-phase — copy and a requirements checklist only, so there's nothing to
-run `tsc`/`test`/`build` against; the "verification" here is internal
-consistency against what's actually shipped, the same bar every other
-phase's ROADMAP entry holds itself to.
+written, not assumed from the app's working name. For the icon
+follow-up: `flutter analyze` — zero issues in both apps after the
+`flutter_launcher_icons` run (confirms the generated Android/web assets
+and the edited `pubspec.yaml`s didn't break anything) — and the generated
+PNGs were visually inspected directly (not just assumed from the SVG
+math), including confirming the adaptive-icon foreground PNG actually
+carries a real alpha channel (`sharp` metadata: 4 channels, `hasAlpha:
+true`) rather than an opaque background masquerading as transparent.
 
 **The real stopping point.** Same credential wall as every prior
 phase's, just a different kind of credential: enrolling in the Apple

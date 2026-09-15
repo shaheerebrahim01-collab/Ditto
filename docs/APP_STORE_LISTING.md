@@ -27,18 +27,29 @@ shape as every other phase's stopping point.
   listed under "What we collect" below so filling in either form is a
   transcription job, not a research one, once you're in the console.
 
-## Design system already established (for whoever builds the actual icon)
+## App icon
 
-`mobile/*/lib/core/theme.dart`: cream/beige surfaces (`#FBF7F1`), warm
-brown as the primary action color (`#8A6244`), gold accent (`#C7A363`),
-near-black ink text (`#2B2320`). Fraunces for headings, Plus Jakarta Sans
-for body text (both Google Fonts, already wired in). No app icon artwork
-exists yet — `web/icons/Icon-*.png` in both apps are still Flutter's
-default template placeholders — so this is a real open task, not
-something this document can complete: an actual icon design, distinct
-enough between the two apps that a user with both installed can tell them
-apart at a glance (the two apps otherwise share the same visual language
-by design, per `docs/ARCHITECTURE.md`).
+Built and wired in (no longer an open task): a solid "D" monogram — a
+rounded spine plus a semicircular bowl, deliberately no counter/hole so it
+stays legible at favicon scale — with a small gold accent dot, in
+`mobile/*/lib/core/theme.dart`'s existing palette. The two apps are
+inverted from each other so they're distinguishable at a glance on a home
+screen that has both installed: `customer_app` is the brown-on-cream
+mark, `tailor_app` is the cream-on-brown mark, both sharing the same gold
+accent — same visual language, per `docs/ARCHITECTURE.md`, not two
+unrelated brands.
+
+Source SVGs and the two rendered PNGs (a flat 1024×1024 for the store
+listing/default icon, and a transparent-background version for Android's
+adaptive-icon foreground layer) live in `mobile/*/assets/icon/`.
+`flutter_launcher_icons` (dev dependency, config block in each
+`pubspec.yaml`) generated every Android density bucket, the adaptive icon
+XML/`colors.xml`, and the web `manifest.json`/`favicon.png`/`Icon-*.png`
+set from those two source images — run `dart run flutter_launcher_icons`
+again in either app if the source PNGs ever change. `ios: false` in both
+configs for now, since neither app has generated its `ios/` platform
+folder yet (see the Submission checklist below) — flip it to `true` and
+re-run once that folder exists.
 
 ## Customer app
 
@@ -206,12 +217,15 @@ placeholder or unreachable privacy-policy link.
 ## Asset requirements (verify exact current pixel specs in each console
 at submission time — both platforms have changed these before)
 
-**App icon:**
+**App icon:** done — see the "App icon" section above.
 - Apple: 1024×1024 PNG, no transparency, no pre-rounded corners (the
-  store applies the mask).
-- Google Play: 512×512 PNG (Play Store listing) plus an Android adaptive
-  icon (separate foreground/background layers, already a distinct asset
-  from the one Play Store listing icon).
+  store applies the mask). `mobile/*/assets/icon/icon.png` is already
+  exactly this; use it directly once `ios/` exists (see the checklist
+  below) — no re-export needed.
+- Google Play: 512×512 PNG (Play Store listing, downscale the same
+  `icon.png`) plus the Android adaptive icon (separate foreground/
+  background layers) — already generated into both apps'
+  `android/app/src/main/res/`.
 
 **Screenshots** — both stores require at least one set sized for their
 largest current required device class; exact required sizes/counts are
@@ -240,11 +254,13 @@ once both are true.
    credential wall this phase stops at).
 2. Register both apps in App Store Connect / Play Console using the
    names/descriptions above.
-3. Generate real app icons from the design system above.
+3. ~~Generate real app icons~~ — done, see the "App icon" section above.
 4. Run `flutter create --platforms=ios` in both `mobile/*_app/` dirs
    (needs the real Apple Developer team id from step 1) to generate the
-   missing `ios/` folders, then `flutterfire configure` for each
-   (mirrors what Phase 5 already did for Android).
+   missing `ios/` folders, then `flutterfire configure` for each (mirrors
+   what Phase 5 already did for Android); flip `ios: false` to `true` in
+   both `pubspec.yaml`'s `flutter_launcher_icons:` block and re-run
+   `dart run flutter_launcher_icons` to generate the iOS icon set too.
 5. Capture real screenshots per the device-size requirements current at
    submission time.
 6. Publish the privacy policy above at a real URL; fill in both stores'

@@ -1,11 +1,11 @@
 {
-    "name": "tailor_app",
-    "short_name": "tailor_app",
+    "name": "Ditto for Business",
+    "short_name": "Ditto Biz",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#8A6244",
+    "theme_color": "#8A6244",
+    "description": "Ditto for Business — manage orders, rentals, and your shop.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
