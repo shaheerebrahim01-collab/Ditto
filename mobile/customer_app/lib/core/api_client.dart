@@ -10,6 +10,7 @@ import '../models/measurement.dart';
 import '../models/measurement_visit_request.dart';
 import '../models/rental_booking.dart';
 import '../models/rental_shop.dart';
+import '../models/review.dart';
 import '../models/tailor.dart';
 import '../models/user.dart';
 import 'env.dart';
@@ -123,6 +124,52 @@ class ApiClient {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     return RentalBooking.fromJson(_decode(response));
+  }
+
+  // GET /reviews?rentalShopId= — public, paginated, newest first.
+  Future<({List<Review> data, int total})> listRentalShopReviews(
+    String rentalShopId, {
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final response = await _http.get(
+      _uri('/reviews').replace(queryParameters: {'rentalShopId': rentalShopId, 'page': '$page', 'pageSize': '$pageSize'}),
+    );
+    final body = _decode(response);
+    return (
+      data: (body['data'] as List<dynamic>).map((e) => Review.fromJson(e as Map<String, dynamic>)).toList(),
+      total: body['total'] as int,
+    );
+  }
+
+  // POST /reviews/rentals — only works once the booking's RETURNED, one per booking.
+  Future<void> createRentalReview(
+    String accessToken, {
+    required String bookingId,
+    required int rating,
+    String? comment,
+  }) async {
+    final response = await _http.post(
+      _uri('/reviews/rentals'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({'bookingId': bookingId, 'rating': rating, if (comment != null) 'comment': comment}),
+    );
+    _decode(response);
+  }
+
+  // POST /reviews — only works once the order's DELIVERED, one per order.
+  Future<void> createOrderReview(
+    String accessToken, {
+    required String orderId,
+    required int rating,
+    String? comment,
+  }) async {
+    final response = await _http.post(
+      _uri('/reviews'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $accessToken'},
+      body: jsonEncode({'orderId': orderId, 'rating': rating, if (comment != null) 'comment': comment}),
+    );
+    _decode(response);
   }
 
   // GET /measurements — the signed-in user's own saved measurements.

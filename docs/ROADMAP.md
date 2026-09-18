@@ -586,15 +586,82 @@ accounts or log out without clearing browser storage by hand.
 **Not built yet:**
 - No payments integration on bookings — deposits/late fees are computed
   and stored but nothing charges a card; that's Phase 10.
-- No rating-submission path — `ratingAvg`/`ratingCount` exist on
-  `RentalShopProfile` but nothing writes to them yet (same situation
-  `TailorProfile.ratingAvg` was already in before this phase).
 - No portfolio-style image upload for rental items — `RentalItem.imageUrl`
   is a plain string field in every DTO, but no screen sets it yet (same
   gap `PortfolioScreen` has for tailors — Phase 11's `AWS_S3_BUCKET`/
   `CLOUDINARY_URL`).
-- No sign-out UI in `tailor_app` (see gap above) — a small follow-up,
-  not scoped to any phase yet.
+
+**Follow-up pass — rental-shop rating-submission path and `tailor_app`
+sign-out, both closed.** Two of this phase's own gaps, closed once Phase
+12 (real e2e infra) and Phase 10 (`TailorsModule`/reviews groundwork)
+existed to build on top of.
+
+Rental-shop reviews: `Review` was generalized the same way `Payment` was
+in Phase 10 (`orderId`/`rentalBookingId` both nullable+unique, "exactly
+one of the two" enforced in `ReviewsService`, not the schema — Prisma has
+no native CHECK constraint, same reasoning `AdminService` already uses),
+migration `20260918103154_add_rental_booking_reviews`. New
+`POST /reviews/rentals` (only once `RentalBooking.status` is `RETURNED`,
+one per booking, recomputes `RentalShopProfile.ratingAvg`/`ratingCount`
+in the same transaction, fires a `review_received` notification) sits
+alongside the existing `POST /reviews`, and `GET /reviews` now takes
+either `tailorId` or `rentalShopId` (exactly one) instead of only
+`tailorId`. `GET /orders/me` and `GET /rentals/me` both now include a
+`review: { id }` select so the client can tell "already reviewed" apart
+from "reviewable" without a second round-trip.
+
+**A real bug found while touching `RentalsService`'s includes for the
+above, fixed before it ever shipped:** `cancelBooking`, `markPickedUp`,
+and `markReturned` all called `prisma.rentalBooking.update()` with no
+`include` at all, so their responses were missing the `item` relation
+both mobile apps' `RentalBooking.fromJson` requires as non-null — a real
+cancel/pickup/return action through the actual UI would have thrown a
+null-cast error on the response, not just returned an incomplete object.
+Never caught before because Phase 7/9's own UI verification passes
+happened to not exercise those three specific buttons through Chrome.
+Fixed with the same `bookingInclude`/new `shopBookingInclude` constants
+the list endpoints already used, so create/list/cancel/pickup/return now
+all return a consistently-shaped booking.
+
+Mobile — `customer_app`: `RentalShopDetailScreen` now shows a real
+"Reviews" list (`GET /reviews?rentalShopId=`, new `models/review.dart`),
+not just the existing rating-average line. `MyRentalsScreen` gained a
+"Leave a review" button on `RETURNED`, not-yet-reviewed bookings;
+`OrderTrackingScreen` gained the same for `DELIVERED`, not-yet-reviewed
+orders. Both go through a new shared `core/widgets/review_form_sheet.dart`
+(star rating + optional comment) rather than duplicating that UI twice in
+one app. Deliberately **not** wired into `TailorProfileScreen` — that
+screen still renders entirely from mock data (bio, working hours, cover
+photo — fields `TailorProfile` doesn't have in the schema at all), the
+same pre-existing gap Phase 9 already flagged when it skipped wiring a
+"Message tailor" button there; adding a real review list to an otherwise-
+mock screen wasn't part of closing this gap and would need its own
+scoped pass.
+
+`tailor_app` sign-out: new `core/widgets/sign_out_action.dart`
+(confirmation dialog + `AuthRepository.signOut()`, shared by both
+dashboards since `AuthGate` already reacts to `signOut()`'s
+`notifyListeners()` — no navigation code needed on top), wired as a
+logout `AppBar` action on both `DashboardScreen` (tailor side) and
+`RentalShopDashboardScreen` (rental-shop side), the same spot the
+existing message/notification bell icons already live.
+
+**Verified against the live backend** (local Postgres, real e2e specs —
+`test/reviews.e2e-spec.ts` grew from 5 to 9 tests): rejects reviewing a
+booking that isn't `RETURNED` yet; 404s a stranger reviewing someone
+else's booking; creates a review, recomputes `RentalShopProfile`'s rating
+aggregate, rejects a second review on the same booking without touching
+the aggregate, and lists it back under `?rentalShopId=`; rejects passing
+both `tailorId` and `rentalShopId` to the list endpoint. Full suite
+re-run after: `npx tsc --noEmit` clean, `npm run build` clean, `npm test`
+(3 suites/11 tests) and `npm run test:e2e` (16 suites/96 tests, up from
+92) both green — including `orders.e2e-spec.ts` and `rentals.e2e-spec.ts`
+re-run clean after the `RentalsService` include fix above. `flutter
+analyze` — zero issues in both `customer_app` and `tailor_app`. **Not
+verified here, same gap as every prior mobile-only round (Phases 8/9/10):**
+neither app's new screens were driven through an actual Chrome session
+this pass; the Dart request/response shapes were checked directly against
+the real JSON the endpoints above returned, not assumed.
 
 ## Phase 8 — AI styling & measurements (in progress)
 
@@ -1441,7 +1508,10 @@ tailor's `TailorProfile.ratingAvg`/`ratingCount`, then fires a
 every other public-browse controller (Admin, Tailors, RentalShops,
 Notifications). Not wired into either mobile app yet — `tailor_profile_screen.dart`
 and `rental_shop_detail_screen.dart` still render the "No reviews yet"
-empty state rather than calling this endpoint.
+empty state rather than calling this endpoint. (Closed for the rental-shop
+side, plus rental-booking reviews added to the schema/API, in a Phase 7
+follow-up pass — see that phase's entry. `tailor_profile_screen.dart`
+stayed mock, deliberately, since the rest of that screen is too.)
 
 **Verified for real:** ran the actual suite against the actual dev
 Postgres container (`docker compose up -d`, migrations already applied)

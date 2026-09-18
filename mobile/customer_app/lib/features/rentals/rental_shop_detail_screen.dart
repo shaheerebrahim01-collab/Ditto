@@ -6,6 +6,7 @@ import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
 import '../../models/rental_item.dart';
 import '../../models/rental_shop.dart';
+import '../../models/review.dart';
 import '../messages/chat_screen.dart';
 import 'book_item_screen.dart';
 
@@ -23,6 +24,7 @@ class RentalShopDetailScreen extends StatefulWidget {
 class _RentalShopDetailScreenState extends State<RentalShopDetailScreen> {
   final _api = ApiClient();
   RentalShop? _shop;
+  List<Review> _reviews = const [];
   String? _error;
 
   @override
@@ -34,8 +36,12 @@ class _RentalShopDetailScreenState extends State<RentalShopDetailScreen> {
   Future<void> _load() async {
     try {
       final shop = await _api.getRentalShop(widget.shopId);
+      final reviews = await _api.listRentalShopReviews(widget.shopId);
       if (!mounted) return;
-      setState(() => _shop = shop);
+      setState(() {
+        _shop = shop;
+        _reviews = reviews.data;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Failed to load rental shop');
@@ -118,6 +124,13 @@ class _RentalShopDetailScreenState extends State<RentalShopDetailScreen> {
                   const Text('No items listed yet', style: TextStyle(color: DittoColors.mutedInk))
                 else
                   ...items.map((item) => _RentalItemRow(item: item)),
+                const SizedBox(height: 28),
+                Text('Reviews', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (_reviews.isEmpty)
+                  const Text('No reviews yet', style: TextStyle(color: DittoColors.mutedInk))
+                else
+                  ..._reviews.map((review) => _ReviewCard(review: review)),
               ]),
             ),
           ),
@@ -142,6 +155,50 @@ class _CoverBanner extends StatelessWidget {
       ),
       child: const Center(
         child: Icon(Icons.checkroom_outlined, size: 56, color: DittoColors.cream),
+      ),
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({required this.review});
+
+  final Review review;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: DittoColors.brown.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(review.authorName, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Row(
+                children: List.generate(
+                  5,
+                  (i) => Icon(
+                    i < review.rating ? Icons.star : Icons.star_border,
+                    size: 14,
+                    color: DittoColors.gold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (review.comment != null && review.comment!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(review.comment!, style: const TextStyle(color: DittoColors.mutedInk)),
+          ],
+        ],
       ),
     );
   }

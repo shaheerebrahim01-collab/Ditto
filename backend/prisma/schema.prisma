@@ -233,6 +233,7 @@ model RentalBooking {
   createdAt  DateTime     @default(now())
 
   payment Payment?
+  review  Review?
 }
 
 model PortfolioItem {
@@ -291,14 +292,16 @@ model Payment {
 }
 
 model Review {
-  id        String      @id @default(cuid())
-  orderId   String      @unique
-  order     CustomOrder @relation(fields: [orderId], references: [id])
-  authorId  String
-  author    User        @relation("ReviewAuthor", fields: [authorId], references: [id])
-  rating    Int
-  comment   String?
-  createdAt DateTime    @default(now())
+  id              String         @id @default(cuid())
+  orderId         String?        @unique
+  order           CustomOrder?   @relation(fields: [orderId], references: [id])
+  rentalBookingId String?        @unique
+  rentalBooking   RentalBooking? @relation(fields: [rentalBookingId], references: [id])
+  authorId        String
+  author          User           @relation("ReviewAuthor", fields: [authorId], references: [id])
+  rating          Int
+  comment         String?
+  createdAt       DateTime       @default(now())
 }
 
 model WishlistItem {

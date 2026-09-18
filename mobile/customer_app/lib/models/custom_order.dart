@@ -13,6 +13,7 @@ class CustomOrder {
     required this.createdAt,
     this.tailorBusinessName,
     this.estDeliveryDate,
+    this.reviewed = false,
   });
 
   factory CustomOrder.fromJson(Map<String, dynamic> json) {
@@ -28,6 +29,7 @@ class CustomOrder {
       estDeliveryDate: json['estDeliveryDate'] == null
           ? null
           : DateTime.parse(json['estDeliveryDate'] as String),
+      reviewed: json['review'] != null,
     );
   }
 
@@ -39,4 +41,5 @@ class CustomOrder {
   final DateTime createdAt;
   final String? tailorBusinessName;
   final DateTime? estDeliveryDate;
+  final bool reviewed;
 }

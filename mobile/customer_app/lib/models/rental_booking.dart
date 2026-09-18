@@ -31,6 +31,7 @@ class RentalBooking {
     required this.item,
     this.renter,
     this.overdue = false,
+    this.reviewed = false,
   });
 
   factory RentalBooking.fromJson(Map<String, dynamic> json) {
@@ -44,6 +45,7 @@ class RentalBooking {
       item: RentalItem.fromJson(json['item'] as Map<String, dynamic>),
       renter: json['renter'] != null ? BookingRenter.fromJson(json['renter'] as Map<String, dynamic>) : null,
       overdue: json['overdue'] as bool? ?? false,
+      reviewed: json['review'] != null,
     );
   }
 
@@ -56,4 +58,5 @@ class RentalBooking {
   final RentalItem item;
   final BookingRenter? renter;
   final bool overdue;
+  final bool reviewed;
 }

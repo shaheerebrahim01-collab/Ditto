@@ -10,6 +10,12 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const bookingInclude = {
   item: { include: { shop: { select: { businessName: true } } } },
+  review: { select: { id: true } },
+} as const;
+
+const shopBookingInclude = {
+  item: true,
+  renter: { select: { fullName: true, email: true, phone: true } },
 } as const;
 
 @Injectable()
@@ -84,6 +90,7 @@ export class RentalsService {
     return this.prisma.rentalBooking.update({
       where: { id },
       data: { status: RentalStatus.CANCELLED },
+      include: bookingInclude,
     });
   }
 
@@ -92,7 +99,7 @@ export class RentalsService {
     const bookings = await this.prisma.rentalBooking.findMany({
       where: { item: { shopId: shop.id }, ...(status ? { status } : {}) },
       orderBy: { pickupDate: 'desc' },
-      include: { item: true, renter: { select: { fullName: true, email: true, phone: true } } },
+      include: shopBookingInclude,
     });
     // RentalStatusCron (rental-status.cron.ts) flips PICKED_UP -> LATE
     // hourly once returnDate passes, but `overdue` still checks the date
@@ -113,6 +120,7 @@ export class RentalsService {
     return this.prisma.rentalBooking.update({
       where: { id },
       data: { status: RentalStatus.PICKED_UP },
+      include: shopBookingInclude,
     });
   }
 
@@ -130,6 +138,7 @@ export class RentalsService {
     const updated = await this.prisma.rentalBooking.update({
       where: { id },
       data: { status: RentalStatus.RETURNED, lateFee },
+      include: shopBookingInclude,
     });
     await this.notificationsService.create(
       booking.renterId,

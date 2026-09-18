@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStage } from '@prisma/client';
+import { OrderStage, RentalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CreateRentalReviewDto } from './dto/create-rental-review.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 
 const reviewInclude = {
@@ -54,7 +55,55 @@ export class ReviewsService {
   }
 
   async listForTailor(tailorId: string, page: number, pageSize: number) {
-    const where = { order: { tailorId } };
+    return this.listReviews({ order: { tailorId } }, page, pageSize);
+  }
+
+  // One review per booking, and only once the item's actually come back —
+  // mirrors create()'s DELIVERED gate, RETURNED being RentalStatus's
+  // equivalent "done" state (LATE means still out, not reviewable yet).
+  async createForRentalBooking(renterId: string, dto: CreateRentalReviewDto) {
+    const booking = await this.prisma.rentalBooking.findUnique({
+      where: { id: dto.bookingId },
+      include: { item: { include: { shop: true } } },
+    });
+    if (!booking || booking.renterId !== renterId) throw new NotFoundException('Booking not found');
+    if (booking.status !== RentalStatus.RETURNED) {
+      throw new BadRequestException('Booking must be returned before it can be reviewed');
+    }
+
+    const existing = await this.prisma.review.findUnique({ where: { rentalBookingId: dto.bookingId } });
+    if (existing) throw new BadRequestException('This booking has already been reviewed');
+
+    const shop = booking.item.shop;
+    const newCount = shop.ratingCount + 1;
+    const newAvg = (shop.ratingAvg * shop.ratingCount + dto.rating) / newCount;
+
+    const [review] = await this.prisma.$transaction([
+      this.prisma.review.create({
+        data: { rentalBookingId: dto.bookingId, authorId: renterId, rating: dto.rating, comment: dto.comment },
+        include: reviewInclude,
+      }),
+      this.prisma.rentalShopProfile.update({
+        where: { id: shop.id },
+        data: { ratingAvg: newAvg, ratingCount: newCount },
+      }),
+    ]);
+
+    await this.notificationsService.create(
+      shop.userId,
+      'review_received',
+      'New review',
+      `You received a ${dto.rating}-star review.`,
+    );
+
+    return review;
+  }
+
+  async listForRentalShop(rentalShopId: string, page: number, pageSize: number) {
+    return this.listReviews({ rentalBooking: { item: { shopId: rentalShopId } } }, page, pageSize);
+  }
+
+  private async listReviews(where: Record<string, unknown>, page: number, pageSize: number) {
     const [data, total] = await Promise.all([
       this.prisma.review.findMany({
         where,

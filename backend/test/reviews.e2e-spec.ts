@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { cleanupUsers, createCustomer, createTailor } from './utils/factories';
+import { cleanupUsers, createCustomer, createRentalShop, createTailor } from './utils/factories';
 import { authHeader, createTestApp } from './utils/test-app';
 
 describe('Reviews (e2e)', () => {
@@ -116,7 +116,94 @@ describe('Reviews (e2e)', () => {
     expect(list.body.data.map((r: { rating: number }) => r.rating)).toEqual([3, 5]); // newest (orderB) first
   });
 
-  it('rejects listing reviews with no tailorId', async () => {
+  it('rejects listing reviews with no tailorId or rentalShopId', async () => {
     await request(app.getHttpServer()).get('/reviews').expect(400);
+  });
+
+  async function makeBooking(
+    renterId: string,
+    shopId: string,
+    status: 'PICKED_UP' | 'RETURNED' = 'RETURNED',
+  ) {
+    const item = await prisma.rentalItem.create({
+      data: { shopId, name: 'E2E Review Tux', category: 'suit', pricePerDay: 10, depositAmount: 50 },
+    });
+    return prisma.rentalBooking.create({
+      data: {
+        itemId: item.id,
+        renterId,
+        pickupDate: new Date(Date.now() - 5 * 86400000),
+        returnDate: new Date(Date.now() - 2 * 86400000),
+        status,
+      },
+    });
+  }
+
+  it('rejects reviewing a rental booking that has not been RETURNED yet', async () => {
+    const customer = await createCustomer(prisma);
+    const { user: shopUser, profile: shop } = await createRentalShop(prisma);
+    userIds.push(customer.id, shopUser.id);
+    const booking = await makeBooking(customer.id, shop.id, 'PICKED_UP');
+
+    const [header, token] = authHeader(customer.id, 'CUSTOMER');
+    const res = await request(app.getHttpServer())
+      .post('/reviews/rentals')
+      .set(header, token)
+      .send({ bookingId: booking.id, rating: 5 })
+      .expect(400);
+    expect(res.body.message).toMatch(/must be returned/);
+  });
+
+  it("404s a stranger trying to review someone else's booking", async () => {
+    const customer = await createCustomer(prisma);
+    const stranger = await createCustomer(prisma);
+    const { user: shopUser, profile: shop } = await createRentalShop(prisma);
+    userIds.push(customer.id, stranger.id, shopUser.id);
+    const booking = await makeBooking(customer.id, shop.id);
+
+    const [strangerHeader, strangerToken] = authHeader(stranger.id, 'CUSTOMER');
+    await request(app.getHttpServer())
+      .post('/reviews/rentals')
+      .set(strangerHeader, strangerToken)
+      .send({ bookingId: booking.id, rating: 1 })
+      .expect(404);
+  });
+
+  it('creates a review for a returned booking, updates the rental shop rating aggregate, rejects a second review, and lists it under rentalShopId', async () => {
+    const customer = await createCustomer(prisma);
+    const { user: shopUser, profile: shop } = await createRentalShop(prisma);
+    userIds.push(customer.id, shopUser.id);
+    const booking = await makeBooking(customer.id, shop.id);
+
+    const [header, token] = authHeader(customer.id, 'CUSTOMER');
+    const res = await request(app.getHttpServer())
+      .post('/reviews/rentals')
+      .set(header, token)
+      .send({ bookingId: booking.id, rating: 4, comment: 'Great tux, a bit pricey.' })
+      .expect(201);
+    expect(res.body.rating).toBe(4);
+
+    const updatedShop = await prisma.rentalShopProfile.findUnique({ where: { id: shop.id } });
+    expect(updatedShop?.ratingAvg).toBe(4);
+    expect(updatedShop?.ratingCount).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/reviews/rentals')
+      .set(header, token)
+      .send({ bookingId: booking.id, rating: 2 })
+      .expect(400);
+    const stillOne = await prisma.rentalShopProfile.findUnique({ where: { id: shop.id } });
+    expect(stillOne?.ratingCount).toBe(1);
+
+    const list = await request(app.getHttpServer()).get('/reviews').query({ rentalShopId: shop.id }).expect(200);
+    expect(list.body.total).toBe(1);
+    expect(list.body.data[0].rating).toBe(4);
+  });
+
+  it('rejects passing both tailorId and rentalShopId to the list endpoint', async () => {
+    await request(app.getHttpServer())
+      .get('/reviews')
+      .query({ tailorId: 'x', rentalShopId: 'y' })
+      .expect(400);
   });
 });

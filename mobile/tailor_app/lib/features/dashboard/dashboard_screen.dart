@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/sign_out_action.dart';
 import '../../data/mock_tailor_data.dart';
 import '../../models/tailor_order.dart';
 import '../messages/messages_list_screen.dart';
@@ -33,6 +34,11 @@ class DashboardScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+            onPressed: () => signOutWithConfirmation(context),
           ),
         ],
       ),

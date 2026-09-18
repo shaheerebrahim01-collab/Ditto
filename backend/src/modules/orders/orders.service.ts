@@ -26,6 +26,7 @@ const tailorViewInclude = {
 
 const customerViewInclude = {
   tailor: { select: { businessName: true } },
+  review: { select: { id: true } },
 } as const;
 
 @Injectable()

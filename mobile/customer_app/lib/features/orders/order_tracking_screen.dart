@@ -1,19 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/api_client.dart';
+import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/review_form_sheet.dart';
 import '../../models/custom_order.dart';
 import '../../models/order_summary.dart';
 
 // Full production-stage timeline for one order — the CustomOrder is passed
 // in directly from OrdersScreen rather than re-fetched by id, since the
 // caller already has it.
-class OrderTrackingScreen extends StatelessWidget {
+class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({super.key, required this.order});
 
   final CustomOrder order;
 
   @override
+  State<OrderTrackingScreen> createState() => _OrderTrackingScreenState();
+}
+
+class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
+  final _api = ApiClient();
+  bool _reviewed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reviewed = widget.order.reviewed;
+  }
+
+  Future<void> _review() async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ReviewFormSheet(
+        title: 'Review ${widget.order.tailorBusinessName ?? "your tailor"}',
+        onSubmit: (rating, comment) => _api.createOrderReview(
+          accessToken,
+          orderId: widget.order.id,
+          rating: rating,
+          comment: comment,
+        ),
+      ),
+    );
+    if (submitted == true && mounted) setState(() => _reviewed = true);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final currentIndex = order.stage.index;
 
     return Scaffold(
@@ -57,6 +96,16 @@ class OrderTrackingScreen extends StatelessWidget {
               isCurrent: i == currentIndex,
               isLast: i == OrderStage.values.length - 1,
             ),
+          if (order.stage == OrderStage.delivered && !_reviewed) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _review,
+                child: const Text('Leave a review'),
+              ),
+            ),
+          ],
         ],
       ),
     );

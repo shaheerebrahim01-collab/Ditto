@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/api_client.dart';
 import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/sign_out_action.dart';
 import '../../models/rental_booking.dart';
 import '../../models/rental_item.dart';
 import '../../models/rental_shop.dart';
@@ -88,6 +89,11 @@ class _RentalShopDashboardScreenState extends State<RentalShopDashboardScreen> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+            onPressed: () => signOutWithConfirmation(context),
           ),
         ],
       ),

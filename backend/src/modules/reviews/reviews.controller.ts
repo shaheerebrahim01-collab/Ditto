@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateRentalReviewDto } from './dto/create-rental-review.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ReviewsService } from './reviews.service';
 
@@ -22,11 +23,25 @@ export class ReviewsController {
     return this.reviewsService.create(user.userId, dto);
   }
 
-  // Public — every Review is against a CustomOrder, so tailorId is the only
-  // scope that makes sense today (no rental-booking reviews in the schema yet).
+  @UseGuards(JwtAuthGuard)
+  @Post('rentals')
+  createRentalReview(@CurrentUser() user: { userId: string }, @Body() dto: CreateRentalReviewDto) {
+    return this.reviewsService.createForRentalBooking(user.userId, dto);
+  }
+
+  // Public — pass exactly one of tailorId/rentalShopId depending on which
+  // kind of review list you want; a Review is always against exactly one.
   @Get()
-  list(@Query('tailorId') tailorId: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
-    if (!tailorId) throw new BadRequestException('tailorId is required');
-    return this.reviewsService.listForTailor(tailorId, parsePage(page, 1, Infinity), parsePage(pageSize, 20, 100));
+  list(
+    @Query('tailorId') tailorId: string | undefined,
+    @Query('rentalShopId') rentalShopId: string | undefined,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    if (!tailorId && !rentalShopId) throw new BadRequestException('tailorId or rentalShopId is required');
+    if (tailorId && rentalShopId) throw new BadRequestException('Pass only one of tailorId or rentalShopId');
+    const p = parsePage(page, 1, Infinity);
+    const ps = parsePage(pageSize, 20, 100);
+    return tailorId ? this.reviewsService.listForTailor(tailorId, p, ps) : this.reviewsService.listForRentalShop(rentalShopId!, p, ps);
   }
 }

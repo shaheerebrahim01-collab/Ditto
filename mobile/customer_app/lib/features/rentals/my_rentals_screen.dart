@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/api_client.dart';
 import '../../core/auth_repository.dart';
 import '../../core/theme.dart';
+import '../../core/widgets/review_form_sheet.dart';
 import '../../models/rental_booking.dart';
 import '../../models/rental_status.dart';
 
@@ -43,6 +44,26 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
       if (!mounted) return;
       setState(() => _error = 'Failed to load your rentals');
     }
+  }
+
+  Future<void> _review(RentalBooking booking) async {
+    final accessToken = context.read<AuthRepository>().accessToken;
+    if (accessToken == null) return;
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ReviewFormSheet(
+        title: 'Review ${booking.item.name}',
+        onSubmit: (rating, comment) => _api.createRentalReview(
+          accessToken,
+          bookingId: booking.id,
+          rating: rating,
+          comment: comment,
+        ),
+      ),
+    );
+    if (submitted == true) _load();
   }
 
   Future<void> _cancel(RentalBooking booking) async {
@@ -91,6 +112,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
           booking: booking,
           cancelling: _cancellingIds.contains(booking.id),
           onCancel: () => _cancel(booking),
+          onReview: () => _review(booking),
         );
       },
     );
@@ -98,11 +120,12 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
 }
 
 class _BookingCard extends StatelessWidget {
-  const _BookingCard({required this.booking, required this.cancelling, required this.onCancel});
+  const _BookingCard({required this.booking, required this.cancelling, required this.onCancel, required this.onReview});
 
   final RentalBooking booking;
   final bool cancelling;
   final VoidCallback onCancel;
+  final VoidCallback onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +188,16 @@ class _BookingCard extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: cancelling ? null : onCancel,
                 child: Text(cancelling ? 'Cancelling...' : 'Cancel booking'),
+              ),
+            ),
+          ],
+          if (booking.status == RentalStatus.returned && !booking.reviewed) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: onReview,
+                child: const Text('Leave a review'),
               ),
             ),
           ],
